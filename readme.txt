@@ -18,7 +18,8 @@ pip install pyusb
 pip install crcmod
 
 Note 1: if running weewx with python3 but python2 is the default python, use pip3
-Note 2: if pip is not installed then install it first (e.g. sudo apt install python-pip on a debian based linux distribution) replace with python3-pip for a python3 install.
+Note 2: if pip is not installed then install it first (e.g. sudo apt install python-pip on a debian based linux distribution)
+replace with python3-pip for a python3 install.
 
 2) download the driver
 
