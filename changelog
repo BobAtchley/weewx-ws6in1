@@ -1,0 +1,8 @@
+0.2 2020-04-27
+* Added setTime function.  This sets the time time on the WS console on
+  initialisation and every 24 hours.
+* Implemented decoding of the optional extra 7 temperature/humidity sensors
+* Tidy up of the code
+
+0.1 2020-03-12
+* initial release
