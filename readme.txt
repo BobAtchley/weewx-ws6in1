@@ -16,6 +16,7 @@ Installation
 
 pip install pyusb
 pip install crcmod
+pip install datetime
 
 Note: if running weewx with python3 but python2 is the default python, use pip3
 

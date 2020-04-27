@@ -3,6 +3,7 @@ import usb.util
 import sys
 import struct
 import crcmod
+from datetime import datetime
 import time
 import weedb
 import weewx.drivers
@@ -17,7 +18,7 @@ Garni 935PC
 Ventus W835
 
 The interface is undocumented.  The following has been determined by
-sniffing the usb interface
+sniffing the usb interface (using Wireshark)
 
 Decoding
 ========
@@ -322,8 +323,7 @@ These are the values I have seen
 0xfc050000000838fd : seen once before history dump
 
 I don't know for sure what any of these mean and of course their may
-be other commands that I haven't seen (I know there should be one to
-set the date/time)
+be other commands that I haven't seen
 
 The console is keen to provide data as long as something is sent.
 With the Youshiko software the 7+ 64 byte
@@ -335,21 +335,22 @@ Guesses at command sequences (all these may be wrong and/or incomplete)
 0x0300: provide latest reading now
 0xd401: Ack and continue
 0xd501: Ack and continue
-0xd402: ?
+0xd402: ? Possibly a Nack ?
 0x0500: Request history dump (confirmed working)
+0x08: date (yy mm dd in hex)
+0x09: time (hh mm ss in hex)
 
 I'm guessing the 2 command sequences with erroneous CRC check sums are
-code defects so ignoring (but this may be completely wrong)
+code defects (but this may be completely wrong).  These seem to give date/time
 
 I have no idea what the difference between 0xd401 and 0xd501. 
 
 If a sleep is used the Ack and continue retrieves the now stale data.
-The latest data command is better used.
 
 """
 ###############################################################################
 DRIVER_NAME = 'WS6in1'
-DRIVER_VERSION = "0.1"
+DRIVER_VERSION = "0.2"
 
 #------------------------------------------------------------------------------
 # loader
@@ -383,6 +384,8 @@ class ws6in1(weewx.drivers.AbstractDevice):
         self.model   = "WS6in1"
         self.last_rain = None
         self.ws_status = 0
+        self.timeSet = False
+        self.lastTimeSet = time.time()
 
     # end __init__
 
@@ -414,7 +417,7 @@ class ws6in1(weewx.drivers.AbstractDevice):
                 self.index=self.index+1
                 end = True
         if myStr == "--.-":
-            return -99999.9
+            return None
 
         retVal = float(myStr)
         return retVal
@@ -439,11 +442,11 @@ class ws6in1(weewx.drivers.AbstractDevice):
             myChar=str(chr(self.buff[self.index]))
             myStr = myStr + str(myChar)
             self.index = self.index + 1
-            if self.buff[self.index] == 0x20:
+            if self.buff[self.index] == 0x20 or self.buff[self.index] == 0x00:
                 self.index=self.index+1
                 end = True
         if myStr == "--":
-            return -99999
+            return None
 
         retVal = int(myStr)
         return retVal
@@ -514,6 +517,7 @@ class ws6in1(weewx.drivers.AbstractDevice):
 
         # weewx packet to be returned
         packet = {}
+        
 
         # step 1 join the parts together
         j=0
@@ -548,6 +552,7 @@ class ws6in1(weewx.drivers.AbstractDevice):
                     i = i+1
                     k=k+1
                     if j > level and tmp[k] == 0x00:
+                        self.buff.append(0x20) # end with a space
                         k=64
 
             # buff should contain the ascii values that are needed
@@ -588,9 +593,25 @@ class ws6in1(weewx.drivers.AbstractDevice):
 
             dewpoint = self.get_float()
 
-            ## still to do get the 7 temp/humidity sensor data
-            ## I don't have one so cannot test except negatively
+            # not sure what this float is but discard
+            rubbish2 = self.get_float()
 
+            ## get the 7 temp/humidity sensor data
+            ## I don't have one so cannot test except negatively
+            extraTemp1  = self.get_float()
+            extraHumid1 = self.get_int()
+            extraTemp2  = self.get_float()
+            extraHumid2 = self.get_int()
+            extraTemp3  = self.get_float()
+            extraHumid3 = self.get_int()
+            extraTemp4  = self.get_float()
+            extraHumid4 = self.get_int()
+            extraTemp5  = self.get_float()
+            extraHumid5 = self.get_int()
+            extraTemp6  = self.get_float()
+            extraHumid6 = self.get_int()
+            extraTemp7  = self.get_float()
+            extraHumid7 = self.get_int()
 
             # weewx time - use local time as its accurate (ntp, utc)
             my_time = int(time.time() + 0.5)
@@ -612,6 +633,20 @@ class ws6in1(weewx.drivers.AbstractDevice):
             packet['barometer'] = barom_rel
             packet['UV'] = uv_index
             packet['dewpoint'] = dewpoint
+            packet['extraHumid1'] = extraHumid1
+            packet['extraHumid2'] = extraHumid2
+            packet['extraHumid3'] = extraHumid3
+            packet['extraHumid4'] = extraHumid4
+            packet['extraHumid5'] = extraHumid5
+            packet['extraHumid6'] = extraHumid6
+            packet['extraHumid7'] = extraHumid7
+            packet['extraTemp1'] = extraTemp1
+            packet['extraTemp2'] = extraTemp2
+            packet['extraTemp3'] = extraTemp3
+            packet['extraTemp4'] = extraTemp4
+            packet['extraTemp5'] = extraTemp5
+            packet['extraTemp6'] = extraTemp6
+            packet['extraTemp7'] = extraTemp7
             self.ws_status = 1
 
         except:
@@ -942,23 +977,132 @@ class ws6in1(weewx.drivers.AbstractDevice):
                 print("yielding")
                 self.ws_status = 0
                 yield packet
-                #time.sleep(60)
+
+            # set the time every 24 hours (and initially after 20 loops to get initialisation done)
+            if count > 20 and self.timeSet == False:
+                self.setTime()
+                self.timeSet = True
+                self.lastTimeSet += 86400
+            elif self.timeSet == True:
+                if time.time() > self.lastTimeSet:
+                    self.timeSet = False
+
         # end while forever loop
 
     # end def genLoopPackets
 
-# end class ws6in1
+    #--------------------------------------------------------------------------
+    # setTime
+    #--------------------------------------------------------------------------
+    # Function to set the time in the console to the current local time
+    # This is done with 2 usb calls, the first sets the day, the second set
+    # the time.  Note time is only updated to nearest second
+    #
+    # Assumes local time with summertime correction is wanted.
+    #
+    #--------------------------------------------------------------------------
+    def setTime(self):
 
-#==============================================================================
-# Main programme
-#==============================================================================
-#def main():
-#    print("ws6in1 decoder")
-#    myWs=ws6in1()
-#    myWs.findMyDevice()
-#    myWs.initialiseMyDevice()
-#    myWs.deviceReadLoop()
-#    print ("Unexpectedly at end of main")
-#
-#if __name__ == "__main__":
-#    main()
+        # create function from crcmod to check CRCs
+        crcfunc = crcmod.predefined.mkCrcFun('xmodem')
+
+        # First get the date and time
+        my_now = datetime.now()
+        my_year  = my_now.year - 2000
+        my_month = my_now.month
+        my_day   = my_now.day
+
+        # create buffer for date
+        date_buf = struct.pack('BBBBBBBB',
+                               0xFC, 0x08, my_year, my_month, my_day, 0x00, 0x00, 0xFD);
+        crc=crcfunc(date_buf[0:5])
+        crc1 = crc>>8
+        crc2 = crc - (crc1<<8)
+        date_buf = struct.pack('BBBBBBBB',
+                               0xFC, 0x08, my_year, my_month, my_day, crc1, crc2, 0xFD);
+
+        # set parameters
+        usb_request = 0x09
+        wvalue      = 0x0200
+        timeout     = 10000  # Milliseconds
+
+        # tranfer date
+        try:
+            retval = self.dev.ctrl_transfer(
+                0x21,         # USB Request Type
+                usb_request,  # USB Request
+                wvalue,       # WValue
+                0,            # Index
+                date_buf,     # Message
+                timeout)
+
+            out=self.dev.read(0x81,64,timeout)
+
+            # get the time again (could be 10 seconds later ...)
+            my_now = datetime.now()
+            my_hour  = my_now.hour
+            my_min   = my_now.minute
+            my_sec   = my_now.second
+
+            # create buffer for time
+            time_buf = struct.pack('BBBBBBBB',
+                                   0xFC, 0x09, my_hour, my_min, my_sec, 0x00, 0x00, 0xFD);
+            crc=crcfunc(time_buf[0:5])
+            crc1 = crc>>8
+            crc2 = crc - (crc1<<8)
+            time_buf = struct.pack('BBBBBBBB',
+                                   0xFC, 0x09, my_hour, my_min, my_sec, crc1, crc2, 0xFD);
+            # no checking, it worked or it didn't ....
+            
+            retval = self.dev.ctrl_transfer(
+                0x21,         # USB Request Type
+                usb_request,  # USB Request
+                wvalue,       # WValue
+                0,            # Index
+                time_buf,     # Message
+                timeout)
+
+            out=self.dev.read(0x81,64,timeout)
+            # no checking, it worked or it didn't ....
+
+        except IOError as e:
+            print ("setTime IOError error:", e)
+            pass
+        except ReferenceError as e:
+            print ("setTime ReferenceError error:", e)
+            pass
+        except ValueError as e:
+            print ("setTime ValueError error:", e)
+            pass
+        except RuntimeError as e:
+            print ("setTime RuntimeError error:", e)
+            pass
+        except ArithmeticError as e:
+            print ("setTime ArithmeticError error:", e)
+            pass
+        except AttributeError as e:
+            print ("setTime AttributeError error:", e)
+            pass
+        except:
+            print ("setTime other unknown error")
+            pass
+
+    # end def setTime
+
+    #--------------------------------------------------------------------------
+    # getTime
+    #--------------------------------------------------------------------------
+    # Function to get the time in the console 
+    #
+    # There is a fundamental problem with the protocol for getting the time
+    # The time is only returned to the nearest minute.
+    #
+    # given this limitation I have decided not to implement it at the moment.
+    #
+    # It could be implemented in the future but without very clever programming
+    # will be 0 to 59 seconds slow.
+    #
+    #--------------------------------------------------------------------------
+    #def getTime(self):
+
+# end class ws6in1

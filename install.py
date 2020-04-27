@@ -9,7 +9,7 @@ def loader():
 class WS6in1Installer(ExtensionInstaller):
     def __init__(self):
         super(WS6in1Installer, self).__init__(
-            version="0.1",
+            version="0.2",
             name='WS6in1',
             description='Collect data from WS6in1 PC connected console',
             author="Bob Atchley",
