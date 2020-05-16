@@ -1,13 +1,6 @@
-import usb.core
-import usb.util
-import sys
-import struct
-import crcmod
-from datetime import datetime
-import time
-import weedb
-import weewx.drivers
-import weeutil.weeutil
+# Copyright 2020 Bob Atchley
+# See the file LICENSE.txt for your full rights.
+#
 
 """
 Weatherstations supported (others may need adding)
@@ -129,10 +122,22 @@ Some notes on this:
 3) when the history data buffer is full no more data is written until 
    the data buffer is manually cleared
 
+History:
+-------
 When the history data is downloaded this is done in an identical way
-to Section 1 except it start 0xfe01 and the date/time is the historic
-date time and section 1 sets of 64 bytes are repeated multiple times -
-for each recorded entry
+to Section 1 except:
+
+ fe 0000 0000 is replaced.  
+
+The first 2 bytes after the 'fe' are the total number of data history items
+The second 2 bytes is the count of bytes so
+
+fe 0100 001a
+
+would mean that their are a total of 256 data items (0x0100) and the current 
+retrieved data item is the 26th (0x001a)
+
+The data items are retrieved in count and chronological order
 
 ===============================
 
@@ -349,8 +354,25 @@ If a sleep is used the Ack and continue retrieves the now stale data.
 
 """
 ###############################################################################
+
+import usb.core
+import usb.util
+import sys
+import struct
+import time
+import crcmod
+import logging
+from datetime import datetime
+
+import weedb
+import weewx.drivers
+import weeutil.logger
+import weeutil.weeutil
+
+log = logging.getLogger(__name__)
+
 DRIVER_NAME = 'WS6in1'
-DRIVER_VERSION = "0.2"
+DRIVER_VERSION = "0.3"
 
 #------------------------------------------------------------------------------
 # loader
@@ -386,11 +408,27 @@ class ws6in1(weewx.drivers.AbstractDevice):
         self.ws_status = 0
         self.timeSet = False
         self.lastTimeSet = time.time()
+        self.useArchiveTime = False
+        self.arch_interval = 300
+        self.last_ts = 0
 
     # end __init__
 
+    #--------------------------------------------------------------------------
+    # archive_interval
+    #--------------------------------------------------------------------------
+    # provides the archive interval in seconds
+    #--------------------------------------------------------------------------
+    @property
+    def archive_interval(self):
+        return self.arch_interval
+
+    #--------------------------------------------------------------------------
+    # hardware_name
+    #--------------------------------------------------------------------------
     # Unfortunately there is no provision to obtain the model from the station
     # itself, so use what is specified from the configuration file.
+    #--------------------------------------------------------------------------
     @property
     def hardware_name(self):
         return self.model
@@ -476,6 +514,28 @@ class ws6in1(weewx.drivers.AbstractDevice):
 
     # end def get_string
 
+    #--------------------------------------------------------------------------
+    # getArchiveEpoch
+    #--------------------------------------------------------------------------
+    # calculates the time in seconds since the epoch for the archive time
+    #--------------------------------------------------------------------------
+    # ws_date gives the archive date expected format is YYYY-MM-DD
+    # ws_time gives the archive time expected format is HH-MM 
+    #--------------------------------------------------------------------------    
+    def getArchiveEpoch(self, ws_date, ws_time):
+
+        my_year  = int(ws_date[0:4])
+        my_month = int(ws_date[5:7])
+        my_day   = int(ws_date[8:])
+
+        my_hour = int(ws_time[0:2])
+        my_min  = int(ws_time[3:5])
+        my_sec  = 0
+        my_epoch = (datetime(my_year,my_month,my_day,my_hour,my_min,my_sec) - datetime(1970,1,1)).total_seconds()
+    
+        return my_epoch
+
+    # end getArchiveEpoch
     
     #-------------------------------------------------------
     # rain_delta
@@ -541,7 +601,7 @@ class ws6in1(weewx.drivers.AbstractDevice):
                     tmp = bytearray(self.in4)
                 else:
                     # error shouldn't get here
-                    print ("decode: unexpected level="+str(j))
+                    log.error("decode: unexpected level=%d", j)
 
                 # construct the buffer
                 j = j+1        
@@ -613,8 +673,20 @@ class ws6in1(weewx.drivers.AbstractDevice):
             extraTemp7  = self.get_float()
             extraHumid7 = self.get_int()
 
-            # weewx time - use local time as its accurate (ntp, utc)
-            my_time = int(time.time() + 0.5)
+            my_interval = 0
+            if self.useArchiveTime:
+                log.debug("gettint time")
+                my_time = self.getArchiveEpoch(ws_date, ws_time)
+                log.debug("got time: %d", my_time)
+                my_interval = my_time - self.last_ts
+                if my_interval < 0:
+                    my_interval = 0
+
+                self.last_ts = my_time
+
+            else:
+                # weewx time - use local time as its accurate (ntp, utc)
+                my_time = int(time.time() + 0.5)
 
             # weewx uses packet ...
             packet['usUnits'] = weewx.METRIC
@@ -647,11 +719,46 @@ class ws6in1(weewx.drivers.AbstractDevice):
             packet['extraTemp5'] = extraTemp5
             packet['extraTemp6'] = extraTemp6
             packet['extraTemp7'] = extraTemp7
+            if self.useArchiveTime:
+                packet['interval'] = my_interval
             self.ws_status = 1
-
+            
+        except IOError as e:
+            log.error ("IOError error: %s", e)
+            exit()
+        except TypeError as e:
+            log.error ("TypeError error: %s", e)
+            exit()
+        except NameError as e:
+            log.error ("NameError error: %s", e)
+            exit()
+        except UnboundLocalError as e:
+            log.error ("UnboundLocalError error: %s", e)
+            exit()
+        except ReferenceError as e:
+            log.error ("ReferenceError error: %s", e)
+            exit()
+        except ValueError as e:
+            log.error ("ValueError error: %s", e)
+            exit()
+        except RuntimeError as e:
+            log.error ("RuntimeError error: %s", e)
+            exit()
+        except ArithmeticError as e:
+            log.error ("ArithmeticError error: %s", e)
+            exit()
+        except AssertionError as e:
+            log.error ("AssertionError error: %s", e)
+            exit()
+        except AttributeError as e:
+            log.error ("AttributeError error: %s", e)
+            exit()
+        except LookupError as e:
+            log.error ("LookupError error: %s", e)
+            exit()
         except:
-            print ("unable to decode")
-            pass
+            log.error ("unable to decode")
+            exit()
 
         return packet
 
@@ -668,11 +775,11 @@ class ws6in1(weewx.drivers.AbstractDevice):
         self.dev = usb.core.find(idVendor=self.vendor, idProduct=self.product)
 
         if self.dev is None:
-            print ("dev not found")
+            log.critical("findMyDevice: dev not found")
             raise ValueError('Device not found')
 
         # check if kernel driver
-        print("success getting dev")
+        log.info("success getting dev")
 
     # end findMyDevice
 
@@ -686,29 +793,29 @@ class ws6in1(weewx.drivers.AbstractDevice):
 
         # check if the kernel has it ...
         if self.dev.is_kernel_driver_active(0):
-            print("need to detach from the kernel")
+            log.debug("need to detach from the kernel")
             self.dev.detach_kernel_driver(0)
-            print("detached")
+            log.debug("detached")
             
         # reset the device
         self.dev.reset()
 
-        # dev is known ... print some parameters
-        print("dev.bLength            = "+str(self.dev.bLength))
-        print("dev.bNumConfigurations = "+str(self.dev.bNumConfigurations))
-        print("dev.bDeviceClass       = "+str(self.dev.bDeviceClass))
+        # dev is known ... log some parameters
+        log.debug("dev.bLength            = %s", self.dev.bLength)
+        log.debug("dev.bNumConfigurations = %s", self.dev.bNumConfigurations)
+        log.debug("dev.bDeviceClass       = %s", self.dev.bDeviceClass)
 
         # get the active configuration
         self.myCfg = self.dev.get_active_configuration()
 
         if self.myCfg is None:
-            print ("cfg not found")
+            log.error ("initialiseMyDevice: cfg not found")
             raise ValueError('configuration not found')
 
-        # cfg is known ... print some parameters
-        print("success getting configuration")
-        print("myCfg.bConfigurationValue = "+str(self.myCfg.bConfigurationValue))
-        print("myCfg.bNumInterfaces      = "+str(self.myCfg.bNumInterfaces)+"\n")
+        # cfg is known ... log some parameters
+        log.info("success getting configuration")
+        log.info("myCfg.bConfigurationValue = %s", self.myCfg.bConfigurationValue)
+        log.info("myCfg.bNumInterfaces      = %s\n", self.myCfg.bNumInterfaces)
 
         # set parameters
         usbRequestType = 0x0a
@@ -721,10 +828,10 @@ class ws6in1(weewx.drivers.AbstractDevice):
                 usbRequestType,  # USB Request
                 wLength)         # WValue
 
-            print("Set idle done")
+            log.debug("Set idle done")
 
         except:
-            print("Exception setting idle")
+            log.info("Exception setting idle (this is ok)")
             pass
 
         # set parameters
@@ -738,10 +845,10 @@ class ws6in1(weewx.drivers.AbstractDevice):
                 usbRequestType,  # USB Request
                 wLength)         # WValue
 
-            print("Sent HID descriptor length")
+            log.debug("Sent HID descriptor length")
 
         except:
-            print("HID Descriptor got")
+            log.info("HID Descriptor got")
             pass
 
         self.initialised = True
@@ -773,7 +880,7 @@ class ws6in1(weewx.drivers.AbstractDevice):
             out=self.dev.read(0x81,64,timeout)
             # not processing the initiatisation read ...
         except:
-            print ("initialisation start failed")
+            log.error("initialisation start failed")
             pass
 
     # end dev initialiseMyDevice
@@ -787,7 +894,9 @@ class ws6in1(weewx.drivers.AbstractDevice):
     #---------------------------------------------------------------
     def genLoopPackets(self):
 
-        print ("starting read loop ...")
+        self.useArchiveTime = False
+
+        log.debug ("genLoopPackets: starting read loop ...")
 
         if not self.initialised:
             self.findMyDevice()
@@ -803,26 +912,7 @@ class ws6in1(weewx.drivers.AbstractDevice):
         crcfunc = crcmod.predefined.mkCrcFun('xmodem')
 
         # Construct known binary messages
-        start_buf = struct.pack('BBBBBBBB',
-                                0xFC,
-                                0x07,
-                                0x00,
-                                0x00,
-                                0x00,
-                                0xE5,
-                                0x50,
-                                0xFD)
 
-        hist_buf = struct.pack('BBBBBBBB',
-                               0xFC,
-                               0x05,
-                               0x00,
-                               0x00,
-                               0x00,
-                               0x08,
-                               0x38,
-                               0xFD)
-    
         ack2_buf = struct.pack('BBBBBBBB',
                                0xFC,
                                0xD5,
@@ -864,16 +954,9 @@ class ws6in1(weewx.drivers.AbstractDevice):
             # buf is the command passed to the console
             # if sleep is being used the 'now_buf' gets the latest
             # if sleep is not being used the 'ack2_buf' works well
-            buf = now_buf
+            buf = ack2_buf
             if count == 1:
                 buf = now_buf
-            elif count == 2:
-                buf = ack1_buf
-
-            #    uncomment this to get a history dump (at count  40 change ...)
-            #elif count == 40:
-            #    a_buf = hist_buf
-            #    print("history")
 
             try:
                 retval = self.dev.ctrl_transfer(
@@ -898,7 +981,7 @@ class ws6in1(weewx.drivers.AbstractDevice):
                     if d != 0xfd or crc_a != 0:
                         crc_ok = False
                         decode_ok = False
-                        print ("bad CRC")
+                        log.warning ("genLoopPackets: bad CRC")
 
                     if (c == 0x11 or c == 0x21 or c == 0x31 or c == 0x41) and crc_ok:
                         self.in1 = bytearray(out)
@@ -930,51 +1013,51 @@ class ws6in1(weewx.drivers.AbstractDevice):
                     elif not decode_ok:
                         pass
                     else:
-                        print("unexpected value of c=" + str(c))
+                        log.debug("unexpected value of c=" + str(c))
 
             # the exits below are good for the beta, better as pass
             # for issued version (and most not needed)
             except KeyboardInterrupt as e:
                 exit()
             except IOError as e:
-                print ("IOError error:", e)
+                log.error ("IOError error: %s", e)
                 exit()
             except TypeError as e:
-                print ("TypeError error:", e)
+                log.error ("TypeError error: %s", e)
                 exit()
             except NameError as e:
-                print ("NameError error:", e)
+                log.error ("NameError error: %s", e)
                 exit()
             except UnboundLocalError as e:
-                print ("UnboundLocalError error:", e)
+                log.error ("UnboundLocalError error: %s", e)
                 exit()
             except ReferenceError as e:
-                print ("ReferenceError error:", e)
+                log.error ("ReferenceError error: %s", e)
                 exit()
             except ValueError as e:
-                print ("ValueError error:", e)
+                log.error ("ValueError error: %s", e)
                 exit()
             except RuntimeError as e:
-                print ("RuntimeError error:", e)
+                log.error ("RuntimeError error: %s", e)
                 exit()
             except ArithmeticError as e:
-                print ("ArithmeticError error:", e)
+                log.error ("ArithmeticError error: %s", e)
                 exit()
             except AssertionError as e:
-                print ("AssertionError error:", e)
+                log.error ("AssertionError error: %s", e)
                 exit()
             except AttributeError as e:
-                print ("AttributeError error:", e)
+                log.error ("AttributeError error: %s", e)
                 exit()
             except LookupError as e:
-                print ("LookupError error:", e)
+                log.error ("LookupError error: %s", e)
                 exit()
             except:
-                print ("other unknown error")
+                log.error ("other unknown error")
                 exit()
 
             if self.ws_status > 0:
-                print("yielding")
+                log.debug("genLoopPackets: yielding")
                 self.ws_status = 0
                 yield packet
 
@@ -991,6 +1074,195 @@ class ws6in1(weewx.drivers.AbstractDevice):
 
     # end def genLoopPackets
 
+    #--------------------------------------------------------------------------
+    # genStartupRecords
+    #--------------------------------------------------------------------------
+    # the weewx engine call this function at the start when there are missing
+    # records in the database.  This function retrieves them, yielding the
+    # values that are greater than the input time back to the engine
+    #--------------------------------------------------------------------------
+    # since_ts: epoch time in seconds
+    #--------------------------------------------------------------------------
+    def genStartupRecords(self, since_ts):
+
+        self.useArchiveTime = True
+        self.last_ts = since_ts
+
+        log.debug("genStartupRecords: starting archive loop ... %d", since_ts)
+
+        if not self.initialised:
+            self.findMyDevice()
+            self.initialiseMyDevice()
+
+        # set parameters
+        usb_request = 0x09
+        wvalue=0x0200
+        timeout = 1300000  # Milliseconds
+        decode_ok = False
+
+        # create function from crcmod to check CRCs
+        crcfunc = crcmod.predefined.mkCrcFun('xmodem')
+
+        # Construct known binary messages
+        hist_buf = struct.pack('BBBBBBBB',
+                               0xFC,
+                               0x05,
+                               0x00,
+                               0x00,
+                               0x00,
+                               0x08,
+                               0x38,
+                               0xFD)
+    
+        ack2_buf = struct.pack('BBBBBBBB',
+                               0xFC,
+                               0xD5,
+                               0x01,
+                               0x00,
+                               0x00,
+                               0x97,
+                               0x0B,
+                               0xFD)
+        
+        nack_buf = struct.pack('BBBBBBBB',
+                               0xFC,
+                               0xD5,
+                               0x02,
+                               0x00,
+                               0x00,
+                               0xCE,
+                               0x5B,
+                               0xFD)
+        # do some looping
+        packet = {}
+        packet['usUnits'] = weewx.METRIC
+
+        count  = 0
+        moreHistory = True
+        badCrc = False
+        level = 0
+
+        while moreHistory:
+            count += 1
+
+            # buf is the command passed to the console
+            # if sleep is being used the 'now_buf' gets the latest
+            # if sleep is not being used the 'ack2_buf' works well
+            buf = ack2_buf
+            if count == 1:
+                buf = hist_buf
+            elif badCrc:
+                buf = nack_buf
+                badCrc = False
+
+            try:
+                retval = self.dev.ctrl_transfer(
+                    0x21,         # USB Request Type
+                    usb_request,  # USB Request
+                    wvalue,       # WValue
+                    0,            # Index
+                    buf,          # Message
+                    timeout)
+
+                out=self.dev.read(0x81,64,timeout)
+
+                # check to see if this is of interest
+                a = out[0]
+                c = out[5]
+                d = out[63]
+                level = 0
+                b1 = out[1]
+                b2 = out[2]
+                b3 = out[3]
+                b4 = out[4]
+
+                if a == 0xfe and (b1 > 0 or b2 > 0):
+                    crc_ok = True
+                    crc_a = crcfunc(out[0:63])
+                    if d != 0xfd or crc_a != 0:
+                        crc_ok = False
+                        badCrc = True
+                        log.warning ("genStartupRecords: bad CRC")
+
+                    if (c == 0x11 or c == 0x21 or c == 0x31 or c == 0x41) and crc_ok:
+                        self.in1 = bytearray(out)
+
+                        if c == 0x11:
+                            level = 1
+                            packet = self.decode(level)
+
+                    elif (c == 0x22 or c == 0x32 or c == 0x42) and crc_ok:
+                        self.in2 = bytearray(out)
+
+                        if c == 0x22:
+                            level = 2
+                            packet = self.decode(level)
+
+                    elif (c == 0x33 or c == 0x43) and crc_ok:
+                        self.in3 = bytearray(out)
+
+                        if c == 0x33:
+                            level = 3
+                            packet = self.decode(level)
+
+                    elif c == 0x44 and crc_ok:
+                        self.in4 = bytearray(out)
+                        level = 4
+                        packet = self.decode(level)
+
+            # the exits below are good for the beta, better as pass
+            # for issued version (and most not needed)
+            except IOError as e:
+                log.error ("IOError error: %s", e)
+                exit()
+            except NameError as e:
+                log.error ("NameError error: %s", e)
+                exit()
+            except UnboundLocalError as e:
+                log.error ("UnboundLocalError error: %s", e)
+                exit()
+            except ReferenceError as e:
+                log.error ("ReferenceError error: %s", e)
+                exit()
+            except ValueError as e:
+                log.error ("ValueError error: %s", e)
+                exit()
+            except RuntimeError as e:
+                log.error ("RuntimeError error: %s", e)
+                exit()
+            except ArithmeticError as e:
+                log.error ("ArithmeticError error: %s", e)
+                exit()
+            except AssertionError as e:
+                log.error ("AssertionError error: %s", e)
+                exit()
+            except AttributeError as e:
+                log.error ("AttributeError error: %s", e)
+                exit()
+            except LookupError as e:
+                log.error ("LookupError error: %s", e)
+                exit()
+            except:
+                log.error ("other unknown error")
+                exit()
+
+            if self.ws_status > 0:
+                # check that time is the wanted range
+                if packet['dateTime'] > since_ts:
+                    log.debug("genStartupRecords: yielding")
+                    yield packet
+
+                self.ws_status = 0
+
+            # need to check if this was the last history item
+            if level > 0:
+                if b1 == b3 and b2 == b4:
+                    moreHistory = False
+            
+        # end while still getting history
+
+    # end def genStartupRecords
+    
     #--------------------------------------------------------------------------
     # setTime
     #--------------------------------------------------------------------------
@@ -1066,28 +1338,29 @@ class ws6in1(weewx.drivers.AbstractDevice):
             # no checking, it worked or it didn't ....
 
         except IOError as e:
-            print ("setTime IOError error:", e)
+            log.error ("setTime IOError error: %s", e)
             pass
         except ReferenceError as e:
-            print ("setTime ReferenceError error:", e)
+            log.error ("setTime ReferenceError error: %s", e)
             pass
         except ValueError as e:
-            print ("setTime ValueError error:", e)
+            log.error ("setTime ValueError error: %s", e)
             pass
         except RuntimeError as e:
-            print ("setTime RuntimeError error:", e)
+            log.error ("setTime RuntimeError error: %s", e)
             pass
         except ArithmeticError as e:
-            print ("setTime ArithmeticError error:", e)
+            log.error ("setTime ArithmeticError error: %s", e)
             pass
         except AttributeError as e:
-            print ("setTime AttributeError error:", e)
+            log.error ("setTime AttributeError error: %s", e)
             pass
         except:
-            print ("setTime other unknown error")
+            log.error ("setTime other unknown error")
             pass
 
     # end def setTime
+
 
     #--------------------------------------------------------------------------
     # getTime
@@ -1104,5 +1377,18 @@ class ws6in1(weewx.drivers.AbstractDevice):
     #
     #--------------------------------------------------------------------------
     #def getTime(self):
+    # end def getTime(self)
+
+
+    #--------------------------------------------------------------------------
+    # genArchiveRecords
+    #--------------------------------------------------------------------------
+    # Deliberately not implemented.
+    # The problem is that the only way to access the required record is to read
+    # the data buffer from the beginning right to the end - potentially 14400
+    # sets of records - not good, and this will happen every 5 minutes.
+    #--------------------------------------------------------------------------
+    # def genStartupRecords(self, since_ts):
+    # end def genStartupRecords    
 
 # end class ws6in1

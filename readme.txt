@@ -19,8 +19,9 @@ pip install crcmod
 pip install datetime
 
 Note 1: if running weewx with python3 but python2 is the default python, use pip3
-Note 2: if pip is not installed then install it first (e.g. sudo apt install python-pip on a debian based linux distribution)
-replace with python3-pip for a python3 install.
+Note 2: if pip is not installed then install it first (e.g. sudo apt install
+python-pip on a debian based linux distribution) replace with python3-pip for a
+python3 install.
 
 2) download the driver
 
@@ -46,3 +47,16 @@ sudo /etc/init.d/weewx start
 sudo systemctl start weewx
 sudo systemctl enable weewx ]
 
+Additional Notes
+----------------
+
+If weewx stops working (due to server problems etc) and there are missing
+records, on startup weewx will attempt to restore these from the your weather
+station console.  To be successful in the weewx.conf section "[StdArchive]" set
+record_generation = hardware (the default is software).
+
+It is recommended you change your weather station console Data Log interval to
+'5' minutes.  Please note this means after 50 days the weather station data log
+will be full and it will no longer record data, so it is essential you
+regularly clear the console data log (best practice would be after a successful
+weewx database backup).  This can only be done at the weather station console.

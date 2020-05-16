@@ -1,3 +1,9 @@
+0.3 2020-05-16
+* Added genStartupRecords.  This adds missing records from the console data log
+  at weewx startup
+* Replaced all "print" statements with log.debug, log.info log.error or
+  log.critical statements
+
 0.2 2020-04-27
 * Added setTime function.  This sets the time time on the WS console on
   initialisation and every 24 hours.
