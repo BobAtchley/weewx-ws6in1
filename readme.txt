@@ -60,3 +60,5 @@ It is recommended you change your weather station console Data Log interval to
 will be full and it will no longer record data, so it is essential you
 regularly clear the console data log (best practice would be after a successful
 weewx database backup).  This can only be done at the weather station console.
+
+Issue: ws6in1 (and weewx) will fail if the console has no data to retrieve.  I will issue a fix shortly, the work around is if you reset the data log on the console you need to wait for one data log period (eg, 5 mins, 30 mins etc) before starting weewx.
