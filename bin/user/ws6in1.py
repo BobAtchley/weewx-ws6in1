@@ -139,6 +139,13 @@ retrieved data item is the 26th (0x001a)
 
 The data items are retrieved in count and chronological order
 
+Note: if the data log has been cleared on the console then the following 
+data will be retured:
+
+fe ffff ffff 11 
+
+After this the buffer is filled with 0's and the correct CRC FD given
+
 ===============================
 
 Break down of section 1
@@ -372,7 +379,7 @@ import weeutil.weeutil
 log = logging.getLogger(__name__)
 
 DRIVER_NAME = 'WS6in1'
-DRIVER_VERSION = "0.3"
+DRIVER_VERSION = "0.4"
 
 #------------------------------------------------------------------------------
 # loader
@@ -409,7 +416,7 @@ class ws6in1(weewx.drivers.AbstractDevice):
         self.timeSet = False
         self.lastTimeSet = time.time()
         self.useArchiveTime = False
-        self.arch_interval = 300
+        # self.arch_interval = 300 # not used
         self.last_ts = 0
 
     # end __init__
@@ -418,10 +425,13 @@ class ws6in1(weewx.drivers.AbstractDevice):
     # archive_interval
     #--------------------------------------------------------------------------
     # provides the archive interval in seconds
+    # As genArchiveRecords cannot be implemented it' better not to implement
+    # this.  Instead the weewx engine will use the value specified in
+    # [StdArchive] section of the weewx.conf file.
     #--------------------------------------------------------------------------
-    @property
-    def archive_interval(self):
-        return self.arch_interval
+    #@property
+    #def archive_interval(self):
+    #    return self.arch_interval
 
     #--------------------------------------------------------------------------
     # hardware_name
@@ -675,9 +685,9 @@ class ws6in1(weewx.drivers.AbstractDevice):
 
             my_interval = 0
             if self.useArchiveTime:
-                log.debug("gettint time")
+                log.debug("decode::gettint time")
                 my_time = self.getArchiveEpoch(ws_date, ws_time)
-                log.debug("got time: %d", my_time)
+                log.debug("decode::got time: %d", my_time)
                 my_interval = my_time - self.last_ts
                 if my_interval < 0:
                     my_interval = 0
@@ -724,40 +734,46 @@ class ws6in1(weewx.drivers.AbstractDevice):
             self.ws_status = 1
             
         except IOError as e:
-            log.error ("IOError error: %s", e)
+            log.error ("decode::IOError error: %s", e)
             exit()
         except TypeError as e:
-            log.error ("TypeError error: %s", e)
+            log.error ("decode::TypeError error: %s", e)
             exit()
         except NameError as e:
-            log.error ("NameError error: %s", e)
+            log.error ("decode::NameError error: %s", e)
             exit()
         except UnboundLocalError as e:
-            log.error ("UnboundLocalError error: %s", e)
+            log.error ("decode::UnboundLocalError error: %s", e)
             exit()
         except ReferenceError as e:
-            log.error ("ReferenceError error: %s", e)
+            log.error ("decode::ReferenceError error: %s", e)
             exit()
         except ValueError as e:
-            log.error ("ValueError error: %s", e)
+            log.error ("decode::ValueError error: %s", e)
+            print ("buflen="+str(len(self.buff))+"  level="+str(level))
+            for i in range (len(self.buff)):
+                print(str(self.buff[i]), end=" ")
+            print ("int1:")
+            for i in range (len(self.in1)):
+                print(str(self.in1[i]), end=" ")
             exit()
         except RuntimeError as e:
-            log.error ("RuntimeError error: %s", e)
+            log.error ("decode::RuntimeError error: %s", e)
             exit()
         except ArithmeticError as e:
-            log.error ("ArithmeticError error: %s", e)
+            log.error ("decode::ArithmeticError error: %s", e)
             exit()
         except AssertionError as e:
-            log.error ("AssertionError error: %s", e)
+            log.error ("decode::AssertionError error: %s", e)
             exit()
         except AttributeError as e:
-            log.error ("AttributeError error: %s", e)
+            log.error ("decode::AttributeError error: %s", e)
             exit()
         except LookupError as e:
-            log.error ("LookupError error: %s", e)
+            log.error ("decode::LookupError error: %s", e)
             exit()
         except:
-            log.error ("unable to decode")
+            log.error ("decode::unknown error -unable to decode")
             exit()
 
         return packet
@@ -779,7 +795,7 @@ class ws6in1(weewx.drivers.AbstractDevice):
             raise ValueError('Device not found')
 
         # check if kernel driver
-        log.info("success getting dev")
+        log.info("findMyDevice::success getting dev")
 
     # end findMyDevice
 
@@ -793,17 +809,17 @@ class ws6in1(weewx.drivers.AbstractDevice):
 
         # check if the kernel has it ...
         if self.dev.is_kernel_driver_active(0):
-            log.debug("need to detach from the kernel")
+            log.debug("initialiseMyDevice::need to detach from the kernel")
             self.dev.detach_kernel_driver(0)
-            log.debug("detached")
+            log.debug("initialiseMyDevice::detached")
             
         # reset the device
         self.dev.reset()
 
         # dev is known ... log some parameters
-        log.debug("dev.bLength            = %s", self.dev.bLength)
-        log.debug("dev.bNumConfigurations = %s", self.dev.bNumConfigurations)
-        log.debug("dev.bDeviceClass       = %s", self.dev.bDeviceClass)
+        log.debug("initialiseMyDevice::dev.bLength            = %s", self.dev.bLength)
+        log.debug("initialiseMyDevice::dev.bNumConfigurations = %s", self.dev.bNumConfigurations)
+        log.debug("initialiseMyDevice::dev.bDeviceClass       = %s", self.dev.bDeviceClass)
 
         # get the active configuration
         self.myCfg = self.dev.get_active_configuration()
@@ -813,9 +829,9 @@ class ws6in1(weewx.drivers.AbstractDevice):
             raise ValueError('configuration not found')
 
         # cfg is known ... log some parameters
-        log.info("success getting configuration")
-        log.info("myCfg.bConfigurationValue = %s", self.myCfg.bConfigurationValue)
-        log.info("myCfg.bNumInterfaces      = %s\n", self.myCfg.bNumInterfaces)
+        log.info("initialiseMyDevice::success getting configuration")
+        log.info("initialiseMyDevice::myCfg.bConfigurationValue = %s", self.myCfg.bConfigurationValue)
+        log.info("initialiseMyDevice::myCfg.bNumInterfaces      = %s\n", self.myCfg.bNumInterfaces)
 
         # set parameters
         usbRequestType = 0x0a
@@ -828,10 +844,10 @@ class ws6in1(weewx.drivers.AbstractDevice):
                 usbRequestType,  # USB Request
                 wLength)         # WValue
 
-            log.debug("Set idle done")
+            log.debug("initialiseMyDevice::Set idle done")
 
         except:
-            log.info("Exception setting idle (this is ok)")
+            log.info("initialiseMyDevice::Exception setting idle (this is ok)")
             pass
 
         # set parameters
@@ -845,10 +861,10 @@ class ws6in1(weewx.drivers.AbstractDevice):
                 usbRequestType,  # USB Request
                 wLength)         # WValue
 
-            log.debug("Sent HID descriptor length")
+            log.debug("initialiseMyDevice::Sent HID descriptor length")
 
         except:
-            log.info("HID Descriptor got")
+            log.info("initialiseMyDevice::HID Descriptor got")
             pass
 
         self.initialised = True
@@ -856,7 +872,7 @@ class ws6in1(weewx.drivers.AbstractDevice):
         # set parameters
         usb_request = 0x09
         wvalue=0x0200
-        timeout = 1300000  # Milliseconds
+        timeout = 30000  # Milliseconds
         decode_ok = False
         start_buf = struct.pack('BBBBBBBB',
                                 0xFC,
@@ -880,7 +896,7 @@ class ws6in1(weewx.drivers.AbstractDevice):
             out=self.dev.read(0x81,64,timeout)
             # not processing the initiatisation read ...
         except:
-            log.error("initialisation start failed")
+            log.error("initialiseMyDevice::initialisation start failed")
             pass
 
     # end dev initialiseMyDevice
@@ -895,6 +911,7 @@ class ws6in1(weewx.drivers.AbstractDevice):
     def genLoopPackets(self):
 
         self.useArchiveTime = False
+        tcount = 0
 
         log.debug ("genLoopPackets: starting read loop ...")
 
@@ -905,7 +922,7 @@ class ws6in1(weewx.drivers.AbstractDevice):
         # set parameters
         usb_request = 0x09
         wvalue=0x0200
-        timeout = 1300000  # Milliseconds
+        timeout = 30000  # Milliseconds 30 seconds
         decode_ok = False
 
         # create function from crcmod to check CRCs
@@ -1013,35 +1030,46 @@ class ws6in1(weewx.drivers.AbstractDevice):
                     elif not decode_ok:
                         pass
                     else:
-                        log.debug("unexpected value of c=" + str(c))
+                        log.debug("genLoopPackets::unexpected value of c=" + str(c))
 
             # the exits below are good for the beta, better as pass
             # for issued version (and most not needed)
             except KeyboardInterrupt as e:
                 exit()
             except IOError as e:
-                log.error ("IOError error: %s", e)
-                exit()
+                log.error ("genLoopPackets::IOError error: %s", e)
+                # the most likely explanation is a timeout
+                tcount = tcount + 1
+                count = 0
+                if tcount > 5:
+                    log.critical ("genLoopPackets::IOError critical (too many timeouts): %s", e)
+                    exit()
+                try:
+                    out=self.dev.read(0x81,64,5000)
+                except IOError as e:
+                    log.error ("genLoopPackets::timeout on read as well: %s", e)
+                    pass
+                pass
             except TypeError as e:
-                log.error ("TypeError error: %s", e)
+                log.error ("genLoopPackets::TypeError error: %s", e)
                 exit()
             except NameError as e:
-                log.error ("NameError error: %s", e)
+                log.error ("genLoopPackets::NameError error: %s", e)
                 exit()
             except UnboundLocalError as e:
-                log.error ("UnboundLocalError error: %s", e)
+                log.error ("genLoopPackets::UnboundLocalError error: %s", e)
                 exit()
             except ReferenceError as e:
-                log.error ("ReferenceError error: %s", e)
+                log.error ("genLoopPackets::ReferenceError error: %s", e)
                 exit()
             except ValueError as e:
-                log.error ("ValueError error: %s", e)
+                log.error ("genLoopPackets::ValueError error: %s", e)
                 exit()
             except RuntimeError as e:
-                log.error ("RuntimeError error: %s", e)
+                log.error ("genLoopPackets::RuntimeError error: %s", e)
                 exit()
             except ArithmeticError as e:
-                log.error ("ArithmeticError error: %s", e)
+                log.error ("genLoopPackets::ArithmeticError error: %s", e)
                 exit()
             except AssertionError as e:
                 log.error ("AssertionError error: %s", e)
@@ -1050,10 +1078,10 @@ class ws6in1(weewx.drivers.AbstractDevice):
                 log.error ("AttributeError error: %s", e)
                 exit()
             except LookupError as e:
-                log.error ("LookupError error: %s", e)
+                log.error ("genLoopPackets::LookupError error: %s", e)
                 exit()
             except:
-                log.error ("other unknown error")
+                log.error ("genLoopPackets::other unknown error")
                 exit()
 
             if self.ws_status > 0:
@@ -1087,6 +1115,7 @@ class ws6in1(weewx.drivers.AbstractDevice):
 
         self.useArchiveTime = True
         self.last_ts = since_ts
+        tcount = 0
 
         log.debug("genStartupRecords: starting archive loop ... %d", since_ts)
 
@@ -1097,7 +1126,7 @@ class ws6in1(weewx.drivers.AbstractDevice):
         # set parameters
         usb_request = 0x09
         wvalue=0x0200
-        timeout = 1300000  # Milliseconds
+        timeout = 30000  # Milliseconds (30 seconds)
         decode_ok = False
 
         # create function from crcmod to check CRCs
@@ -1176,7 +1205,11 @@ class ws6in1(weewx.drivers.AbstractDevice):
                 b3 = out[3]
                 b4 = out[4]
 
-                if a == 0xfe and (b1 > 0 or b2 > 0):
+                # check for the case where the console has no data
+                if b1 == 0xff and b2 == 0xff and b3 == 0xff and b4 == 0xff:
+                    moreHistory = False
+
+                if moreHistory and a == 0xfe and (b1 > 0 or b2 > 0):
                     crc_ok = True
                     crc_a = crcfunc(out[0:63])
                     if d != 0xfd or crc_a != 0:
@@ -1213,37 +1246,49 @@ class ws6in1(weewx.drivers.AbstractDevice):
             # the exits below are good for the beta, better as pass
             # for issued version (and most not needed)
             except IOError as e:
-                log.error ("IOError error: %s", e)
+                log.error ("genStartupRecords::IOError error: %s", e)
+                # the most likely explanation is a timeout
+                tcount = tcount + 1
+                count = 0
+                if tcount > 5:
+                    log.critical ("genStartupRecords::IOError critical (too many timeouts): %s", e)
+                    exit()
+                try:
+                    out=self.dev.read(0x81,64,5000)
+                except IOError as e:
+                    log.error ("genStartupRecords::timeout on read as well: %s", e)
+                    pass
+                log.error ("genStartupRecords::IOError error: %s", e)
                 exit()
             except NameError as e:
-                log.error ("NameError error: %s", e)
+                log.error ("genStartupRecords::NameError error: %s", e)
                 exit()
             except UnboundLocalError as e:
-                log.error ("UnboundLocalError error: %s", e)
+                log.error ("genStartupRecords::UnboundLocalError error: %s", e)
                 exit()
             except ReferenceError as e:
-                log.error ("ReferenceError error: %s", e)
+                log.error ("genStartupRecords::ReferenceError error: %s", e)
                 exit()
             except ValueError as e:
-                log.error ("ValueError error: %s", e)
+                log.error ("genStartupRecords::ValueError error: %s", e)
                 exit()
             except RuntimeError as e:
-                log.error ("RuntimeError error: %s", e)
+                log.error ("genStartupRecords::RuntimeError error: %s", e)
                 exit()
             except ArithmeticError as e:
-                log.error ("ArithmeticError error: %s", e)
+                log.error ("genStartupRecords::ArithmeticError error: %s", e)
                 exit()
             except AssertionError as e:
-                log.error ("AssertionError error: %s", e)
+                log.error ("genStartupRecords::AssertionError error: %s", e)
                 exit()
             except AttributeError as e:
-                log.error ("AttributeError error: %s", e)
+                log.error ("genStartupRecords::AttributeError error: %s", e)
                 exit()
             except LookupError as e:
-                log.error ("LookupError error: %s", e)
+                log.error ("genStartupRecords::LookupError error: %s", e)
                 exit()
             except:
-                log.error ("other unknown error")
+                log.error ("genStartupRecords::other unknown error")
                 exit()
 
             if self.ws_status > 0:
@@ -1296,7 +1341,7 @@ class ws6in1(weewx.drivers.AbstractDevice):
         # set parameters
         usb_request = 0x09
         wvalue      = 0x0200
-        timeout     = 10000  # Milliseconds
+        timeout     = 30000  # Milliseconds
 
         # tranfer date
         try:

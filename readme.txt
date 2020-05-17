@@ -55,10 +55,22 @@ records, on startup weewx will attempt to restore these from the your weather
 station console.  To be successful in the weewx.conf section "[StdArchive]" set
 record_generation = hardware (the default is software).
 
+The Archive_Interval in the weewx.conf section "[StdArchive]" controls how often
+data is written to the database.  Default is 300 seconds.  If the console data
+logger is not set to 5 minutes you may want to consider changing this to the
+logger setting (but in seconds).
+
 It is recommended you change your weather station console Data Log interval to
 '5' minutes.  Please note this means after 50 days the weather station data log
 will be full and it will no longer record data, so it is essential you
 regularly clear the console data log (best practice would be after a successful
 weewx database backup).  This can only be done at the weather station console.
 
-Issue: ws6in1 (and weewx) will fail if the console has no data to retrieve.  I will issue a fix shortly, the work around is if you reset the data log on the console you need to wait for one data log period (eg, 5 mins, 30 mins etc) before starting weewx.
+Known Issues
+------------
+
+If weewx is started after clearing the data log on the console then timeout
+errors might occur when there are no entries in the log.  The only cure found
+so far is to wait for the console to have one item in its data log and then
+re-start weewx.  Note if weewx is already running it does not appear to cause
+any problems to clear the data log buffer.
