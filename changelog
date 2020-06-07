@@ -1,3 +1,6 @@
+0.5 2020-06-06
+* Improved error handling to prevent weewx exiting if bad data is received
+
 0.4 2020-05-17
 * Defect fix: Fixed crash if console buffer is empty
 * Additional info in log statements

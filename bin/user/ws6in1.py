@@ -379,7 +379,7 @@ import weeutil.weeutil
 log = logging.getLogger(__name__)
 
 DRIVER_NAME = 'WS6in1'
-DRIVER_VERSION = "0.4"
+DRIVER_VERSION = "0.5"
 
 #------------------------------------------------------------------------------
 # loader
@@ -413,10 +413,10 @@ class ws6in1(weewx.drivers.AbstractDevice):
         self.model   = "WS6in1"
         self.last_rain = None
         self.ws_status = 0
+        self.bad_values = 0
         self.timeSet = False
         self.lastTimeSet = time.time()
         self.useArchiveTime = False
-        # self.arch_interval = 300 # not used
         self.last_ts = 0
 
     # end __init__
@@ -431,7 +431,7 @@ class ws6in1(weewx.drivers.AbstractDevice):
     #--------------------------------------------------------------------------
     #@property
     #def archive_interval(self):
-    #    return self.arch_interval
+    # end archive_interval
 
     #--------------------------------------------------------------------------
     # hardware_name
@@ -467,7 +467,14 @@ class ws6in1(weewx.drivers.AbstractDevice):
         if myStr == "--.-":
             return None
 
-        retVal = float(myStr)
+        try:
+            retVal = float(myStr)
+        except ValueError as e:
+            log.error ("get_float::ValueError error: %s  string: %s", e, myStr)
+            retval = None
+            self.bad_values = self.bad_values + 1
+            pass
+
         return retVal
 
     # end def get_float
@@ -496,7 +503,14 @@ class ws6in1(weewx.drivers.AbstractDevice):
         if myStr == "--":
             return None
 
-        retVal = int(myStr)
+        try:
+            retVal = int(myStr)
+        except ValueError as e:
+            log.error ("get_int::ValueError error: %s  string: %s", e, myStr)
+            retval = None
+            self.bad_values = self.bad_values + 1
+            pass
+ 
         return retVal
 
     # end def get_int
@@ -533,16 +547,21 @@ class ws6in1(weewx.drivers.AbstractDevice):
     # ws_time gives the archive time expected format is HH-MM 
     #--------------------------------------------------------------------------    
     def getArchiveEpoch(self, ws_date, ws_time):
+        try:
+            my_year  = int(ws_date[0:4])
+            my_month = int(ws_date[5:7])
+            my_day   = int(ws_date[8:])
 
-        my_year  = int(ws_date[0:4])
-        my_month = int(ws_date[5:7])
-        my_day   = int(ws_date[8:])
-
-        my_hour = int(ws_time[0:2])
-        my_min  = int(ws_time[3:5])
-        my_sec  = 0
-        my_epoch = (datetime(my_year,my_month,my_day,my_hour,my_min,my_sec) - datetime(1970,1,1)).total_seconds()
+            my_hour = int(ws_time[0:2])
+            my_min  = int(ws_time[3:5])
+            my_sec  = 0
+            my_epoch = (datetime(my_year,my_month,my_day,my_hour,my_min,my_sec) - datetime(1970,1,1)).total_seconds()
     
+        except ValueError as e:
+            log.error ("getArchiveEpoch::ValueError error: %s  date: %s  time: %s", e, ws_date, ws_time)
+            my_epoch = None
+            self.bad_values = self.bad_values + 1
+            pass
         return my_epoch
 
     # end getArchiveEpoch
@@ -584,6 +603,9 @@ class ws6in1(weewx.drivers.AbstractDevice):
     # level is the number of 64 byte messages received
     #-------------------------------------------------------
     def decode(self, level):
+
+        self.ws_status  = 0
+        self.bad_values = 0
 
         # weewx packet to be returned
         packet = {}
@@ -687,12 +709,13 @@ class ws6in1(weewx.drivers.AbstractDevice):
             if self.useArchiveTime:
                 log.debug("decode::gettint time")
                 my_time = self.getArchiveEpoch(ws_date, ws_time)
-                log.debug("decode::got time: %d", my_time)
-                my_interval = my_time - self.last_ts
-                if my_interval < 0:
-                    my_interval = 0
 
-                self.last_ts = my_time
+                if (my_time != None):
+                    my_interval = my_time - self.last_ts
+                    if my_interval < 0:
+                        my_interval = 0
+
+                    self.last_ts = my_time
 
             else:
                 # weewx time - use local time as its accurate (ntp, utc)
@@ -701,6 +724,7 @@ class ws6in1(weewx.drivers.AbstractDevice):
             # weewx uses packet ...
             packet['usUnits'] = weewx.METRIC
             packet['dateTime'] = my_time
+            log.debug("decode::got my_time: %d", my_time)
             packet['inTemp'] = in_temp
             packet['inHumidity'] = in_humid
             packet['outTemp'] = out_temp
@@ -729,25 +753,30 @@ class ws6in1(weewx.drivers.AbstractDevice):
             packet['extraTemp5'] = extraTemp5
             packet['extraTemp6'] = extraTemp6
             packet['extraTemp7'] = extraTemp7
-            if self.useArchiveTime:
-                packet['interval'] = my_interval
             self.ws_status = 1
+
+            if self.useArchiveTime:
+                if my_time == None:
+                    self.ws_status = 0
+                    log.warning("decode:: bad Archive Time - archive record not recoverable")
+                else:
+                    packet['interval'] = my_interval
+
+            if self.bad_values > 0:
+                log.warning("decode: %d bad values occurred", self.bad_values)
+                print ("buflen="+str(len(self.buff))+"  level="+str(level))
+                for i in range (len(self.buff)):
+                    print(str(self.buff[i]), end=" ")
+                print ("int1:")
+                for i in range (len(self.in1)):
+                    print(str(self.in1[i]), end=" ")
+
+                # could set ws_status to 0 which would mean record is dropped
             
         except IOError as e:
             log.error ("decode::IOError error: %s", e)
-            exit()
-        except TypeError as e:
-            log.error ("decode::TypeError error: %s", e)
-            exit()
-        except NameError as e:
-            log.error ("decode::NameError error: %s", e)
-            exit()
-        except UnboundLocalError as e:
-            log.error ("decode::UnboundLocalError error: %s", e)
-            exit()
-        except ReferenceError as e:
-            log.error ("decode::ReferenceError error: %s", e)
-            exit()
+            self.ws_status = 0
+            pass
         except ValueError as e:
             log.error ("decode::ValueError error: %s", e)
             print ("buflen="+str(len(self.buff))+"  level="+str(level))
@@ -756,25 +785,12 @@ class ws6in1(weewx.drivers.AbstractDevice):
             print ("int1:")
             for i in range (len(self.in1)):
                 print(str(self.in1[i]), end=" ")
-            exit()
-        except RuntimeError as e:
-            log.error ("decode::RuntimeError error: %s", e)
-            exit()
-        except ArithmeticError as e:
-            log.error ("decode::ArithmeticError error: %s", e)
-            exit()
-        except AssertionError as e:
-            log.error ("decode::AssertionError error: %s", e)
-            exit()
-        except AttributeError as e:
-            log.error ("decode::AttributeError error: %s", e)
-            exit()
-        except LookupError as e:
-            log.error ("decode::LookupError error: %s", e)
-            exit()
+            self.ws_status = 0
+            pass
         except:
             log.error ("decode::unknown error -unable to decode")
-            exit()
+            self.ws_status = 0
+            pass
 
         return packet
 
@@ -912,6 +928,7 @@ class ws6in1(weewx.drivers.AbstractDevice):
 
         self.useArchiveTime = False
         tcount = 0
+        self.ws_status = 0
 
         log.debug ("genLoopPackets: starting read loop ...")
 
@@ -1034,8 +1051,6 @@ class ws6in1(weewx.drivers.AbstractDevice):
 
             # the exits below are good for the beta, better as pass
             # for issued version (and most not needed)
-            except KeyboardInterrupt as e:
-                exit()
             except IOError as e:
                 log.error ("genLoopPackets::IOError error: %s", e)
                 # the most likely explanation is a timeout
@@ -1050,44 +1065,24 @@ class ws6in1(weewx.drivers.AbstractDevice):
                     log.error ("genLoopPackets::timeout on read as well: %s", e)
                     pass
                 pass
-            except TypeError as e:
-                log.error ("genLoopPackets::TypeError error: %s", e)
-                exit()
-            except NameError as e:
-                log.error ("genLoopPackets::NameError error: %s", e)
-                exit()
-            except UnboundLocalError as e:
-                log.error ("genLoopPackets::UnboundLocalError error: %s", e)
-                exit()
-            except ReferenceError as e:
-                log.error ("genLoopPackets::ReferenceError error: %s", e)
-                exit()
-            except ValueError as e:
-                log.error ("genLoopPackets::ValueError error: %s", e)
-                exit()
-            except RuntimeError as e:
-                log.error ("genLoopPackets::RuntimeError error: %s", e)
-                exit()
-            except ArithmeticError as e:
-                log.error ("genLoopPackets::ArithmeticError error: %s", e)
-                exit()
-            except AssertionError as e:
-                log.error ("AssertionError error: %s", e)
-                exit()
-            except AttributeError as e:
-                log.error ("AttributeError error: %s", e)
-                exit()
-            except LookupError as e:
-                log.error ("genLoopPackets::LookupError error: %s", e)
-                exit()
             except:
                 log.error ("genLoopPackets::other unknown error")
-                exit()
+                tcount = tcount + 1
+                if tcount > 5:
+                    log.critical ("genLoopPackets::too many unknown errors")
+                    exit()
+                try:
+                    out=self.dev.read(0x81,64,5000)
+                except IOError as e:
+                    log.error ("genLoopPackets::error on read as well: %s", e)
+                    pass
+                pass
 
             if self.ws_status > 0:
+                tcount = 0
                 log.debug("genLoopPackets: yielding")
-                self.ws_status = 0
                 yield packet
+                self.ws_status = 0
 
             # set the time every 24 hours (and initially after 20 loops to get initialisation done)
             if count > 20 and self.timeSet == False:
@@ -1116,6 +1111,7 @@ class ws6in1(weewx.drivers.AbstractDevice):
         self.useArchiveTime = True
         self.last_ts = since_ts
         tcount = 0
+        self.ws_status = 0
 
         log.debug("genStartupRecords: starting archive loop ... %d", since_ts)
 
@@ -1259,37 +1255,19 @@ class ws6in1(weewx.drivers.AbstractDevice):
                     log.error ("genStartupRecords::timeout on read as well: %s", e)
                     pass
                 log.error ("genStartupRecords::IOError error: %s", e)
-                exit()
-            except NameError as e:
-                log.error ("genStartupRecords::NameError error: %s", e)
-                exit()
-            except UnboundLocalError as e:
-                log.error ("genStartupRecords::UnboundLocalError error: %s", e)
-                exit()
-            except ReferenceError as e:
-                log.error ("genStartupRecords::ReferenceError error: %s", e)
-                exit()
-            except ValueError as e:
-                log.error ("genStartupRecords::ValueError error: %s", e)
-                exit()
-            except RuntimeError as e:
-                log.error ("genStartupRecords::RuntimeError error: %s", e)
-                exit()
-            except ArithmeticError as e:
-                log.error ("genStartupRecords::ArithmeticError error: %s", e)
-                exit()
-            except AssertionError as e:
-                log.error ("genStartupRecords::AssertionError error: %s", e)
-                exit()
-            except AttributeError as e:
-                log.error ("genStartupRecords::AttributeError error: %s", e)
-                exit()
-            except LookupError as e:
-                log.error ("genStartupRecords::LookupError error: %s", e)
-                exit()
+                pass
             except:
                 log.error ("genStartupRecords::other unknown error")
-                exit()
+                tcount = tcount + 1
+                if tcount > 5:
+                    log.critical ("genStartupRecords::too many unknown errors")
+                    exit()
+                try:
+                    out=self.dev.read(0x81,64,5000)
+                except IOError as e:
+                    log.error ("genStartupRecords::error on read as well: %s", e)
+                    pass
+                pass
 
             if self.ws_status > 0:
                 # check that time is the wanted range
@@ -1297,6 +1275,7 @@ class ws6in1(weewx.drivers.AbstractDevice):
                     log.debug("genStartupRecords: yielding")
                     yield packet
 
+                tcount = 0
                 self.ws_status = 0
 
             # need to check if this was the last history item
