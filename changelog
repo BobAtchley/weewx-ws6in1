@@ -1,3 +1,6 @@
+0.6 2020-06008
+* Fix issue that prevented weewx stopping when stop command issued
+
 0.5 2020-06-06
 * Improved error handling to prevent weewx exiting if bad data is received
 

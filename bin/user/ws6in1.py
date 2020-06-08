@@ -379,7 +379,7 @@ import weeutil.weeutil
 log = logging.getLogger(__name__)
 
 DRIVER_NAME = 'WS6in1'
-DRIVER_VERSION = "0.5"
+DRIVER_VERSION = "0.6"
 
 #------------------------------------------------------------------------------
 # loader
@@ -454,7 +454,7 @@ class ws6in1(weewx.drivers.AbstractDevice):
     #-------------------------------------------------------
     def get_float(self):
 
-        myStr=""
+        myStr = ""
         end = False
 
         while self.index + 1 < len(self.buff) and end == False:
@@ -471,7 +471,7 @@ class ws6in1(weewx.drivers.AbstractDevice):
             retVal = float(myStr)
         except ValueError as e:
             log.error ("get_float::ValueError error: %s  string: %s", e, myStr)
-            retval = None
+            retVal = None
             self.bad_values = self.bad_values + 1
             pass
 
@@ -490,8 +490,8 @@ class ws6in1(weewx.drivers.AbstractDevice):
     #-------------------------------------------------------
     def get_int(self):
 
-        myStr=""
-        end = False
+        myStr = ""
+        end   = False
 
         while self.index + 1 < len(self.buff) and end == False:
             myChar=str(chr(self.buff[self.index]))
@@ -507,7 +507,7 @@ class ws6in1(weewx.drivers.AbstractDevice):
             retVal = int(myStr)
         except ValueError as e:
             log.error ("get_int::ValueError error: %s  string: %s", e, myStr)
-            retval = None
+            retVal = None
             self.bad_values = self.bad_values + 1
             pass
  
@@ -787,10 +787,6 @@ class ws6in1(weewx.drivers.AbstractDevice):
                 print(str(self.in1[i]), end=" ")
             self.ws_status = 0
             pass
-        except:
-            log.error ("decode::unknown error -unable to decode")
-            self.ws_status = 0
-            pass
 
         return packet
 
@@ -1065,18 +1061,6 @@ class ws6in1(weewx.drivers.AbstractDevice):
                     log.error ("genLoopPackets::timeout on read as well: %s", e)
                     pass
                 pass
-            except:
-                log.error ("genLoopPackets::other unknown error")
-                tcount = tcount + 1
-                if tcount > 5:
-                    log.critical ("genLoopPackets::too many unknown errors")
-                    exit()
-                try:
-                    out=self.dev.read(0x81,64,5000)
-                except IOError as e:
-                    log.error ("genLoopPackets::error on read as well: %s", e)
-                    pass
-                pass
 
             if self.ws_status > 0:
                 tcount = 0
@@ -1256,18 +1240,6 @@ class ws6in1(weewx.drivers.AbstractDevice):
                     pass
                 log.error ("genStartupRecords::IOError error: %s", e)
                 pass
-            except:
-                log.error ("genStartupRecords::other unknown error")
-                tcount = tcount + 1
-                if tcount > 5:
-                    log.critical ("genStartupRecords::too many unknown errors")
-                    exit()
-                try:
-                    out=self.dev.read(0x81,64,5000)
-                except IOError as e:
-                    log.error ("genStartupRecords::error on read as well: %s", e)
-                    pass
-                pass
 
             if self.ws_status > 0:
                 # check that time is the wanted range
@@ -1364,23 +1336,8 @@ class ws6in1(weewx.drivers.AbstractDevice):
         except IOError as e:
             log.error ("setTime IOError error: %s", e)
             pass
-        except ReferenceError as e:
-            log.error ("setTime ReferenceError error: %s", e)
-            pass
         except ValueError as e:
             log.error ("setTime ValueError error: %s", e)
-            pass
-        except RuntimeError as e:
-            log.error ("setTime RuntimeError error: %s", e)
-            pass
-        except ArithmeticError as e:
-            log.error ("setTime ArithmeticError error: %s", e)
-            pass
-        except AttributeError as e:
-            log.error ("setTime AttributeError error: %s", e)
-            pass
-        except:
-            log.error ("setTime other unknown error")
             pass
 
     # end def setTime
