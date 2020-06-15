@@ -47,6 +47,24 @@ sudo /etc/init.d/weewx start
 sudo systemctl start weewx
 sudo systemctl enable weewx ]
 
+csv_ws6in1
+----------
+This is a standalone program written in python3 that also gets installed into
+the weewx/bin/user area.  It has no arguments.  It needs to run with sudo
+unless the local user has usb permissions:
+
+$ sudo ./csv_ws6in1
+or
+$ sudo python3 ./csv_ws6in1
+
+When run from the command line it downloads the data from the WS6in1 console
+and creates 2 files:
+ws6in1_<date and time>.csv
+ws6in1_<date and time>.raw
+
+These can be used for analysis, debugging, etc
+weewx should be stopped before this is used and restarted afterwards.
+
 Additional Notes
 ----------------
 

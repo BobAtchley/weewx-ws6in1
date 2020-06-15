@@ -1,4 +1,12 @@
-0.6 2020-06008
+0.7 2020-06-14
+* When bad values are recieved ws6in1 now rejects that set of readings in case
+  any missing data items are then associated with the wrong parameters.
+* Discovery of pylint/3 and pyflakes/3 - used to tidy code and fix some minor
+  issues
+* Addition of csv_ws6in1 standalone program to download the contents of the
+  data buffer from the WS6in1 weather station console.
+
+0.6 2020-06-08
 * Fix issue that prevented weewx stopping when stop command issued
 
 0.5 2020-06-06

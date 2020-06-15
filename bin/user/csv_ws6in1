@@ -1,0 +1,762 @@
+#!/usr/bin/python3
+""" This program downloads the buffer from the ws6in1 compatible weather
+station console and writes it to sepatare csv and raw files
+
+Weatherstations supported (others may need adding)
+===============
+Youshiko YC9388
+Bresser PC 6 in 1
+Garni 935PC
+Ventus W835
+
+See the ws6in1.py file for decoding information
+
+This is a standalone program that is not dependent on weewx in any way
+
+It cannot be run at the same time as weewx.
+
+It is run from the command line
+"""
+
+# Copyright 2020 Bob Atchley
+# See the file LICENSE.txt for your full rights.
+#
+
+import struct
+import time
+from datetime import datetime
+import crcmod
+import usb.core
+import usb.util
+
+
+###############################################################################
+# Class Ws6in1Standalone
+###############################################################################
+# Main class for defining the interface between the WS 6 in 1 weather stations
+# and weewx
+#
+# Inherits from weewx.drivers.AbstractDevice
+###############################################################################
+class Ws6in1Standalone():
+    """Main class"""
+    #-------------------------------------------------------
+    # Constructor
+    #-------------------------------------------------------
+    def __init__(self):
+        self.initialised = False
+        self.index = 0
+        self.vendor = 0x1941
+        self.product = 0x8021
+        self.model = "Ws6in1Standalone"
+        self.last_rain = None
+        self.ws_status = 0
+        self.bad_values = 0
+        self.use_archive_time = False
+        self.last_ts = 0
+
+        self.my_cfg = None
+        self.buff = None
+        self.dev = None
+        self.in1 = None
+        self.in2 = None
+        self.in3 = None
+        self.in4 = None
+
+        # need to open a file
+        my_time = '{0:%Y-%m-%d-%H-%M-%S}'.format(datetime.now())
+        my_file_name = "ws6in1_" + my_time + ".csv"
+        my_raw_name = "ws6in1_" + my_time + ".raw"
+        print("CSV output file: " + my_file_name)
+        print("Raw output file: " + my_raw_name)
+        self.my_file = open(my_file_name, "w")
+        self.my_raw = open(my_raw_name, "w")
+        self.my_file.write(
+            "date, time, dateTime, inTemp, inHumidity, outTemp, outHumidity, " +
+            "dayRain, hourRain, rain, windSpeed, windGust, windDir, pressure, " +
+            "barometer, UV, dewpoint, extraHumid1, extraHumid2, extraHumid3, " +
+            "extraHumid4, extraHumid5, extraHumid6, extraHumid7, extraTemp1, " +
+            "extraTemp2, extraTemp3, extraTemp4, extraTemp5, extraTemp6, " +
+            "extraTemp7, interval, badValues\n")
+
+    # end __init__
+
+
+    #-------------------------------------------------------
+    # get_float
+    #-------------------------------------------------------
+    # Part of the decode sequence this looks at the next part
+    # of the buffer and interprets it as a float.
+    #
+    # needs more error checking ...
+    #
+    #-------------------------------------------------------
+    def get_float(self):
+        """Decodes a input data to float"""
+
+        my_str = ""
+        end = False
+
+        while self.index + 1 < len(self.buff) and not end:
+            my_char = str(chr(self.buff[self.index]))
+            my_str = my_str + str(my_char)
+            self.index = self.index + 1
+            if self.buff[self.index] == 0x20:
+                self.index = self.index+1
+                end = True
+        if my_str == "--.-":
+            return None
+
+        try:
+            retval = float(my_str)
+        except ValueError as my_error:
+            print("ERROR: get_float::ValueError error: " + my_error + " string: " + my_str)
+            retval = None
+            self.bad_values = self.bad_values + 1
+
+        return retval
+
+    # end def get_float
+
+    #-------------------------------------------------------
+    # get_int
+    #-------------------------------------------------------
+    # Part of the decode sequence this looks at the next part
+    # of the buffer and interprets it as an integer.
+    #
+    # needs more error checking ...
+    #
+    #-------------------------------------------------------
+    def get_int(self):
+        """Decodes a input data to int"""
+
+        my_str = ""
+        end = False
+
+        while self.index + 1 < len(self.buff) and not end:
+            my_char = str(chr(self.buff[self.index]))
+            my_str = my_str + str(my_char)
+            self.index = self.index + 1
+            if self.buff[self.index] == 0x20 or self.buff[self.index] == 0x00:
+                self.index = self.index+1
+                end = True
+        if my_str == "--":
+            return None
+
+        try:
+            retval = int(my_str)
+        except ValueError as my_error:
+            print("ERROR: get_int::ValueError error: " + my_error + " string: " + my_str)
+            retval = None
+            self.bad_values = self.bad_values + 1
+
+        return retval
+
+    # end def get_int
+
+    #-------------------------------------------------------
+    # get_string
+    #-------------------------------------------------------
+    # Part of the decode sequence this looks at the next part
+    # of the buffer and interprets it as a string.
+    #-------------------------------------------------------
+    def get_string(self):
+        """Decodes a input data to string"""
+
+        my_str = ""
+        end = False
+
+        while self.index + 1 < len(self.buff) and not end:
+            my_char = str(chr(self.buff[self.index]))
+            my_str = my_str + str(my_char)
+            self.index = self.index + 1
+            if self.buff[self.index] == 0x20:
+                self.index = self.index+1
+                end = True
+
+        return my_str
+
+    # end def get_string
+
+    #--------------------------------------------------------------------------
+    # get_archive_epoch
+    #--------------------------------------------------------------------------
+    # calculates the time in seconds since the epoch for the archive time
+    #--------------------------------------------------------------------------
+    # ws_date gives the archive date expected format is YYYY-MM-DD
+    # ws_time gives the archive time expected format is HH-MM
+    #--------------------------------------------------------------------------
+    def get_archive_epoch(self, ws_date, ws_time):
+        """Converts the date time from the console to a unix epoch time"""
+
+        try:
+            my_year = int(ws_date[0:4])
+            my_month = int(ws_date[5:7])
+            my_day = int(ws_date[8:])
+
+            my_hour = int(ws_time[0:2])
+            my_min = int(ws_time[3:5])
+            my_sec = 0
+            my_epoch = (datetime(my_year, my_month, my_day, my_hour, my_min, my_sec) -
+                        datetime(1970, 1, 1)).total_seconds()
+
+        except ValueError as my_error:
+            print("ERROR: get_archive_epoch::ValueError error: " + my_error + "  date: " +
+                  ws_date + "  time: " + ws_time)
+            my_epoch = None
+            self.bad_values = self.bad_values + 1
+
+        return my_epoch
+
+    # end get_archive_epoch
+
+    #-------------------------------------------------------
+    # rain_delta
+    #-------------------------------------------------------
+    # works out the rain delta from the previous reading
+    #
+    # rain_in is the current rain reading (from midnight)
+    #-------------------------------------------------------
+    def rain_delta(self, rain_in):
+        """determines the rain from the last reading and current"""
+
+        # The default is no rain delta.  Only need to check this if
+        # last_rain is valid and different to rain_in - otherwise 0.0
+        rain_diff = 0.0
+
+        if self.last_rain is not None:
+
+            if rain_in > self.last_rain:
+                rain_diff = rain_in - self.last_rain
+            elif rain_in < self.last_rain:
+                # 2 possibilies either mid night has passed so rain reset
+                # or the station has hiccupped.
+                # Assume the station never hiccups for the moment ...
+                rain_diff = rain_in
+        self.last_rain = rain_in
+        return rain_diff
+
+    # end def rain_delta
+
+    #-------------------------------------------------------
+    # decode
+    #-------------------------------------------------------
+    # This is the main decode sequence
+    # it interprets the buffer input read from the weather
+    # station and interprets it into a sequence of values
+    #
+    # level is the number of 64 byte messages received
+    #-------------------------------------------------------
+    def decode(self, level):
+        """Main decoder - takes the input data buffer and determines the individual values"""
+
+        self.ws_status = 0
+        self.bad_values = 0
+
+        # weewx packet to be returned
+        packet = {}
+
+        # step 1 join the parts together
+        j = 0
+        i = 0
+        self.buff = bytearray()
+        tmp = bytearray()
+
+        #lots can go wrong in the decode .. if it does lets skip
+        try:
+
+            # loop for j = 1 to level
+            j = 1
+            while j <= level:
+                if j == 1:
+                    tmp = bytearray(self.in1)
+                elif j == 2:
+                    tmp = bytearray(self.in2)
+                elif j == 3:
+                    tmp = bytearray(self.in3)
+                elif j == 4:
+                    tmp = bytearray(self.in4)
+                else:
+                    # error shouldn't get here
+                    print("ERROR: decode: unexpected level=" + str(j))
+
+                # construct the buffer
+                j = j + 1
+                k = 7
+                while k < 61:
+                    self.buff.append(tmp[k])
+                    i = i + 1
+                    k = k + 1
+                    if j > level and tmp[k] == 0x00:
+                        self.buff.append(0x20) # end with a space
+                        k = 64
+
+            # buff should contain the ascii values that are needed
+            self.index = 0
+
+            # get an integer - we throw this away
+            self.get_int()
+
+            ws_date = self.get_string()
+
+            ws_time = self.get_string()
+
+            in_temp = self.get_float()
+
+            in_humid = self.get_int()
+
+            out_temp = self.get_float()
+
+            out_humid = self.get_int()
+
+            rain1 = self.get_float()
+
+            rain2 = self.get_float()
+
+            wind_speed = self.get_float()
+
+            wind_gust = self.get_float()
+
+            wind_dir_deg = self.get_int()
+
+            # wind_dir_str = not used but could be in the future ...
+            self.get_string()
+
+            barom_rel = self.get_int()
+
+            barom_abs = self.get_int()
+
+            uv_index = self.get_int()
+
+            dewpoint = self.get_float()
+
+            # not sure what this float is but discard
+            self.get_float()
+
+            ## get the 7 temp/humidity sensor data
+            ## I don't have one so cannot test except negatively
+            extra_temp1 = self.get_float()
+            extra_humid1 = self.get_int()
+            extra_temp2 = self.get_float()
+            extra_humid2 = self.get_int()
+            extra_temp3 = self.get_float()
+            extra_humid3 = self.get_int()
+            extra_temp4 = self.get_float()
+            extra_humid4 = self.get_int()
+            extra_temp5 = self.get_float()
+            extra_humid5 = self.get_int()
+            extra_temp6 = self.get_float()
+            extra_humid6 = self.get_int()
+            extra_temp7 = self.get_float()
+            extra_humid7 = self.get_int()
+
+            my_interval = 0
+            if self.use_archive_time:
+                #log.debug("decode::gettint time")
+                my_time = self.get_archive_epoch(ws_date, ws_time)
+
+                if (my_time != None and self.last_ts != None):
+                    my_interval = my_time - self.last_ts
+                    if my_interval < 0:
+                        my_interval = 0
+
+                if my_time != None:
+                    self.last_ts = my_time
+
+            else:
+                # weewx time - use local time as its accurate (ntp, utc)
+                my_time = int(time.time() + 0.5)
+
+            # start writing these values
+            self.my_file.write(
+                str(ws_date) + ", " + str(ws_time) + ", " + str(my_time) + ", " +
+                str(in_temp) + ", " + str(in_humid) + ", " + str(out_temp) + ", " +
+                str(out_humid) + ", " + str(rain1) + ", " + str(rain2) + ", " +
+                str(self.rain_delta(rain1)) + ", " + str(wind_speed) + ", " +
+                str(wind_gust) + ", " + str(wind_dir_deg) + ", " + str(barom_abs) +
+                ", " + str(barom_rel) + ", " + str(uv_index) + ", " + str(dewpoint) + ", " +
+                str(extra_humid1) + ", " + str(extra_humid2) + ", " + str(extra_humid3) +
+                ", " + str(extra_humid4) + ", " + str(extra_humid5) + ", " +
+                str(extra_humid6) + ", " + str(extra_humid7) + ", " + str(extra_temp1) + ", " +
+                str(extra_temp2) + ", " + str(extra_temp3) + ", " + str(extra_temp4) + ", " +
+                str(extra_temp5) + ", " + str(extra_temp6) + ", " + str(extra_temp7) + ", " +
+                str(my_interval) + ", " + str(self.bad_values) + "\n")
+
+            # and the raw output
+            self.my_raw.write("\n"+ str(ws_date)+" "+str(ws_time) + "\n1: ")
+            locx = 0
+            while locx < len(self.in1):
+                self.my_raw.write(str(self.in1[locx]))
+                self.my_raw.write(" ")
+                locx = locx + 1
+
+            if level >= 2:
+                self.my_raw.write("\n2: ")
+                locx = 0
+                while locx < len(self.in2):
+                    self.my_raw.write(str(self.in2[locx])+" ")
+                    locx = locx + 1
+
+            if level >= 3:
+                self.my_raw.write("\n3: ")
+                locx = 0
+                while locx < len(self.in3):
+                    self.my_raw.write(str(self.in3[locx])+" ")
+                    locx = locx + 1
+
+            if level >= 4:
+                self.my_raw.write("\n4: ")
+                locx = 0
+                while locx < len(self.in4):
+                    self.my_raw.write(str(self.in4[locx])+" ")
+                    locx = locx + 1
+
+            self.ws_status = 1
+
+            if self.use_archive_time:
+                if my_time is None:
+                    self.ws_status = 0
+                    print("WARNING: decode:: bad Archive Time - archive record not recoverable")
+                else:
+                    packet['interval'] = my_interval
+
+            if self.bad_values > 0:
+                print("WARNING: decode: " + str(self.bad_values) +
+                      " bad values occurred - rejecting this set of readings")
+                print("buflen="+str(len(self.buff))+"  level="+str(level))
+                for locy in range(len(self.buff)):
+                    print(str(self.buff[locy]) + " ")
+                print("int1:")
+                for locy in range(len(self.in1)):
+                    print(str(self.in1[locy]) + " ")
+
+                # bad_values occurring in the start records: wrorong time and
+                # missing values means it is better to reject this set of data
+                # reading rather than try and process them (version 0.6 tried
+                # to continue)
+                self.ws_status = 0
+
+        except IOError as my_error:
+            print("ERROR: decode::IOError error: " + my_error)
+            self.ws_status = 0
+
+        except ValueError as my_error:
+            print("ERROR: decode::ValueError error: " + my_error)
+            print("buflen="+str(len(self.buff))+"  level="+str(level))
+            for locy in range(len(self.buff)):
+                print(str(self.buff[locy]) + " ")
+            print("int1:")
+            for locy in range(len(self.in1)):
+                print(str(self.in1[locy]) + " ")
+            self.ws_status = 0
+
+        return packet
+
+    #end def decode
+
+
+    #-------------------------------------------------------
+    # find our device
+    #-------------------------------------------------------
+    # Expect to find the 6 in 1 (+7).  Not finding it is a
+    # show stopper
+    #-------------------------------------------------------
+    def find_my_device(self):
+        """Gets the usb device from the vendor attributes"""
+
+        self.dev = usb.core.find(idVendor=self.vendor, idProduct=self.product)
+
+        if self.dev is None:
+            print("CRITICAL: find_my_device: dev not found")
+            exit()
+
+        # check if kernel driver
+        print("find_my_device::success getting dev")
+
+    # end find_my_device
+
+    #-------------------------------------------------------
+    # initialise_my_device
+    #-------------------------------------------------------
+    # Various commands that initialise the weather station
+    # before the main loop is initiated
+    #-------------------------------------------------------
+    def initialise_my_device(self):
+        """Initialises the usb connection for communication with the console"""
+
+        # check if the kernel has it ...
+        if self.dev.is_kernel_driver_active(0):
+            print("initialise_my_device::need to detach from the kernel")
+            self.dev.detach_kernel_driver(0)
+            print("initialise_my_device::detached")
+
+        # reset the device
+        self.dev.reset()
+
+        # dev is known ... log some parameters
+        print("initialise_my_device::dev.bLength            = ", self.dev.bLength)
+        print("initialise_my_device::dev.bNumConfigurations = ", self.dev.bNumConfigurations)
+        print("initialise_my_device::dev.bDeviceClass       = ", self.dev.bDeviceClass)
+
+        # get the active configuration
+        self.my_cfg = self.dev.get_active_configuration()
+
+        if self.my_cfg is None:
+            print("CRITICAL initialise_my_device: cfg not found")
+            exit()
+
+        # cfg is known ... log some parameters
+        print("initialise_my_device::success getting configuration")
+        print("initialise_my_device::myCfg.bConfigurationValue = ", self.my_cfg.bConfigurationValue)
+        print("initialise_my_device::myCfg.bNumInterfaces      = ", self.my_cfg.bNumInterfaces)
+
+        # set parameters
+        usb_request_type = 0x0a
+        wlength = 0
+
+        # set to idle
+        try:
+            retval = self.dev.ctrl_transfer(
+                0x21,            # USB Request Type
+                usb_request_type,  # USB Request
+                wlength)         # WValue
+            print("initialise_my_device::Set idle done: " + str(retval))
+        except ValueError:
+            print("initialise_my_device::Exception setting idle (this is ok)")
+
+        # set parameters
+        usb_request_type = 0x22
+        wlength = 100
+
+        self.initialised = True
+
+        # set parameters
+        usb_request = 0x09
+        wvalue = 0x0200
+        timeout = 30000  # Milliseconds
+        start_buf = struct.pack('BBBBBBBB',
+                                0xFC,
+                                0x07,
+                                0x00,
+                                0x00,
+                                0x00,
+                                0xE5,
+                                0x50,
+                                0xFD)
+
+        try:
+            retval = self.dev.ctrl_transfer(
+                0x21,         # USB Request Type
+                usb_request,  # USB Request
+                wvalue,       # WValue
+                0,            # Index
+                start_buf,    # Message
+                timeout)
+
+            # out=
+            self.dev.read(0x81, 64, timeout)
+            # not processing the initiatisation read ...
+        except ValueError:
+            print("ERROR: initialise_my_device::initialisation start failed")
+
+    # end dev initialise_my_device
+
+    #--------------------------------------------------------------------------
+    # gen_startup_records
+    #--------------------------------------------------------------------------
+    # the weewx engine call this function at the start when there are missing
+    # records in the database.  This function retrieves them, yielding the
+    # values that are greater than the input time back to the engine
+    #--------------------------------------------------------------------------
+    # since_ts: epoch time in seconds
+    #--------------------------------------------------------------------------
+    def gen_startup_records(self):
+        """Main function that gets the data from the console and calls decode to
+        decode it"""
+
+        self.use_archive_time = True
+        self.last_ts = None
+        tcount = 0
+        self.ws_status = 0
+
+        print("gen_startup_records: starting archive loop ...")
+
+        if not self.initialised:
+            self.find_my_device()
+            try:
+                self.initialise_my_device()
+                print("Initialisation successful")
+            except ValueError:
+                print("Initialisation failed")
+
+        # set parameters
+        usb_request = 0x09
+        wvalue = 0x0200
+        timeout = 30000  # Milliseconds (30 seconds)
+
+        # create function from crcmod to check CRCs
+        crcfunc = crcmod.predefined.mkCrcFun('xmodem')
+
+        # Construct known binary messages
+        hist_buf = struct.pack('BBBBBBBB',
+                               0xFC,
+                               0x05,
+                               0x00,
+                               0x00,
+                               0x00,
+                               0x08,
+                               0x38,
+                               0xFD)
+
+        ack2_buf = struct.pack('BBBBBBBB',
+                               0xFC,
+                               0xD5,
+                               0x01,
+                               0x00,
+                               0x00,
+                               0x97,
+                               0x0B,
+                               0xFD)
+
+        nack_buf = struct.pack('BBBBBBBB',
+                               0xFC,
+                               0xD5,
+                               0x02,
+                               0x00,
+                               0x00,
+                               0xCE,
+                               0x5B,
+                               0xFD)
+        # do some looping
+        count = 0
+        more_history = True
+        bad_crc = False
+        level = 0
+
+        while more_history:
+            count += 1
+
+            # buf is the command passed to the console
+            # if sleep is being used the 'now_buf' gets the latest
+            # if sleep is not being used the 'ack2_buf' works well
+            buf = ack2_buf
+            if count == 1:
+                buf = hist_buf
+            elif bad_crc:
+                buf = nack_buf
+                bad_crc = False
+
+            try:
+                # retval =
+                self.dev.ctrl_transfer(
+                    0x21,         # USB Request Type
+                    usb_request,  # USB Request
+                    wvalue,       # WValue
+                    0,            # Index
+                    buf,          # Message
+                    timeout)
+
+                out = self.dev.read(0x81, 64, timeout)
+
+                # check to see if this is of interest
+                loc_a = out[0]
+                loc_c = out[5]
+                loc_d = out[63]
+                level = 0
+                loc_b1 = out[1]
+                loc_b2 = out[2]
+                loc_b3 = out[3]
+                loc_b4 = out[4]
+
+                # check for the case where the console has no data
+                if loc_b1 == 0xff and loc_b2 == 0xff and loc_b3 == 0xff and loc_b4 == 0xff:
+                    more_history = False
+
+                if more_history and loc_a == 0xfe and (loc_b1 > 0 or loc_b2 > 0):
+                    crc_ok = True
+                    crc_a = crcfunc(out[0:63])
+                    if loc_d != 0xfd or crc_a != 0:
+                        crc_ok = False
+                        bad_crc = True
+                        print("WARNING: gen_startup_records: bad CRC")
+
+                    if (loc_c == 0x11 or loc_c == 0x21 or loc_c == 0x31 or
+                            loc_c == 0x41) and crc_ok:
+
+                        self.in1 = bytearray(out)
+
+                        if loc_c == 0x11:
+                            level = 1
+                            self.decode(level)
+
+                    elif (loc_c == 0x22 or loc_c == 0x32 or loc_c == 0x42) and crc_ok:
+                        self.in2 = bytearray(out)
+
+                        if loc_c == 0x22:
+                            level = 2
+                            self.decode(level)
+
+                    elif (loc_c == 0x33 or loc_c == 0x43) and crc_ok:
+                        self.in3 = bytearray(out)
+
+                        if loc_c == 0x33:
+                            level = 3
+                            self.decode(level)
+
+                    elif loc_c == 0x44 and crc_ok:
+                        self.in4 = bytearray(out)
+                        level = 4
+                        self.decode(level)
+
+            # the exits below are good for the beta, better as pass
+            # for issued version (and most not needed)
+            except IOError as my_error:
+                print("ERROR: gen_startup_records::IOError error: " + my_error)
+                # the most likely explanation is a timeout
+                tcount = tcount + 1
+                count = 0
+                if tcount > 5:
+                    print("CRITICAL: gen_startup_records::IOError critical " +
+                          "(too many timeouts): " + my_error)
+                    exit()
+                try:
+                    out = self.dev.read(0x81, 64, 5000)
+                except IOError as my_error:
+                    print("ERROR: gen_startup_records::timeout on read as well: " + my_error)
+
+                print("ERROR: gen_startup_records::IOError error: " + my_error)
+
+            if self.ws_status > 0:
+                # check that time is the wanted range
+                tcount = 0
+                self.ws_status = 0
+
+            # need to check if this was the last history item
+            if level > 0:
+                if loc_b1 == loc_b3 and loc_b2 == loc_b4:
+                    more_history = False
+
+        # end while still getting history
+        return self.ws_status
+
+    # end def gen_startup_records
+
+# end class Ws6in1Standalone
+
+
+
+#==============================================================================
+# Main programme
+#==============================================================================
+def main():
+    """Main progam - just instantiates the Ws6in1Standalone class and calls
+    gen_startup_records"""
+
+    my_ws = Ws6in1Standalone()
+
+    my_ws.gen_startup_records()
+
+    print("Finished")
+
+if __name__ == "__main__":
+    main()

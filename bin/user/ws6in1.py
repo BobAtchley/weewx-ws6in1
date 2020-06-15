@@ -1,8 +1,8 @@
+"""
 # Copyright 2020 Bob Atchley
 # See the file LICENSE.txt for your full rights.
 #
 
-"""
 Weatherstations supported (others may need adding)
 ===============
 Youshiko YC9388
@@ -28,10 +28,10 @@ x is the number of 64 byte sequences in this section
 y is the iteration count
 In this example section 1 has 3 64 byte messages hence
 where xy is (0x31) then (0x32) then (0x33)
-This initial section contains the base output data in ascii space separated 
+This initial section contains the base output data in ascii space separated
 (0x20)
 
-The actual format will change depending on whether '-' or extra 
+The actual format will change depending on whether '-' or extra
 digits are needed
 
 00000100: fe00 0000 0031 3635 2032 3032 302d 3031  .....165 2020-01
@@ -50,7 +50,7 @@ digits are needed
 000001b0: 0000 0000 0000 0000 0000 0000 0061 e8fd  .............a..
 
 SECTION 2
-This next section provides similar information but spelt out in Ascii 
+This next section provides similar information but spelt out in Ascii
 Each 64 byte starts with 0xfb00 0000 00xy
 In this example section 2 has 4 64 byte messages hence
 where xy is (0x41) then (0x42) then (0x43) then (0x44)
@@ -76,11 +76,11 @@ where xy is (0x41) then (0x42) then (0x43) then (0x44)
 000002b0: 0000 0000 0000 0000 0000 0000 005e 1afd  .............^..
 
 SECTION 3
-This next section provides more information again spelt out in Ascii 
+This next section provides more information again spelt out in Ascii
 Each 64 byte starts with 0xf100 0000 00xy
 In this example section 3 has 3 64 byte messages hence
 where xy is (0x31) then (0x32) then (0x33)
-                      
+
 This section is usually not present
 
 000002c0: f100 0000 0031 362f 6261 722f 3130 3431  .....16/bar/1041
@@ -114,12 +114,12 @@ Each 64 byte starts with 0xfa03 0000 0000 - these can be discarded
 
 After this the sequence repeats
 
-Other Sequences.  It is possible to request the history of recorded 
+Other Sequences.  It is possible to request the history of recorded
 data from the console.
 Some notes on this:
 1) period is set at the console only.  Default 30 mins
 2) The only way to clear the data is at the console.
-3) when the history data buffer is full no more data is written until 
+3) when the history data buffer is full no more data is written until
    the data buffer is manually cleared
 
 History:
@@ -127,22 +127,22 @@ History:
 When the history data is downloaded this is done in an identical way
 to Section 1 except:
 
- fe 0000 0000 is replaced.  
+ fe 0000 0000 is replaced.
 
 The first 2 bytes after the 'fe' are the total number of data history items
 The second 2 bytes is the count of bytes so
 
 fe 0100 001a
 
-would mean that their are a total of 256 data items (0x0100) and the current 
+would mean that their are a total of 256 data items (0x0100) and the current
 retrieved data item is the 26th (0x001a)
 
 The data items are retrieved in count and chronological order
 
-Note: if the data log has been cleared on the console then the following 
+Note: if the data log has been cleared on the console then the following
 data will be retured:
 
-fe ffff ffff 11 
+fe ffff ffff 11
 
 After this the buffer is filled with 0's and the correct CRC FD given
 
@@ -317,8 +317,8 @@ Initial decode will only look at section 1 - all other blocks discarded
 Additional:
 
 From the provided Youshiko Windows software commands are sent to the console.
-These are 8 bytes in length.  
-The first byte is always 0xfc.  
+These are 8 bytes in length.
+The first byte is always 0xfc.
 The last byte is always 0xfd
 The penultimate 2 bytes are the check sum (CRC-16/xmodem) of the first
 5 bytes As some of the commands have the check sum bytes the wrong way
@@ -326,7 +326,7 @@ around I'm not convinced the console actually checks the checksum.
 These are the values I have seen
 
 0xfc07000000e550fd : first command
-0xfc030000002fa1fd : second command - seen a few times (possibly due to console command to update now)
+0xfc030000002fa1fd : 2nd command - seen a few times (update now)
 0xfcd4010000e1bffd : repeated many times
 0xfc08140107cbedfd : seen once, crc checksum wrong way around
 0xfc09141b0d8dd6fd : seen once, crc checksum wrong way around
@@ -355,31 +355,27 @@ Guesses at command sequences (all these may be wrong and/or incomplete)
 I'm guessing the 2 command sequences with erroneous CRC check sums are
 code defects (but this may be completely wrong).  These seem to give date/time
 
-I have no idea what the difference between 0xd401 and 0xd501. 
+I have no idea what the difference between 0xd401 and 0xd501.
 
 If a sleep is used the Ack and continue retrieves the now stale data.
 
 """
 ###############################################################################
 
-import usb.core
-import usb.util
-import sys
 import struct
 import time
-import crcmod
 import logging
 from datetime import datetime
+import crcmod
+import usb.core
+import usb.util
 
-import weedb
 import weewx.drivers
-import weeutil.logger
-import weeutil.weeutil
 
 log = logging.getLogger(__name__)
 
 DRIVER_NAME = 'WS6in1'
-DRIVER_VERSION = "0.6"
+DRIVER_VERSION = "0.7"
 
 #------------------------------------------------------------------------------
 # loader
@@ -390,6 +386,7 @@ DRIVER_VERSION = "0.6"
 # engine:      a reference to the weewx engine
 #------------------------------------------------------------------------------
 def loader(config_dict, engine):
+    """returns the ws6in1 driver instance"""
     return ws6in1(**config_dict[DRIVER_NAME])
 # end def loader
 
@@ -402,23 +399,35 @@ def loader(config_dict, engine):
 # Inherits from weewx.drivers.AbstractDevice
 ###############################################################################
 class ws6in1(weewx.drivers.AbstractDevice):
-    
+    """ws6in1 is the main driver class for use with weewx and WS6in1 compatible
+    weather station consoles"""
+
     #-------------------------------------------------------
     # Constructor
     #-------------------------------------------------------
     def __init__(self, **stn_dict):
         self.initialised = False
-        self.vendor  = 0x1941
+        self.index = 0
+        self.vendor = 0x1941
         self.product = 0x8021
-        self.model   = "WS6in1"
+        self.model = "WS6in1"
         self.last_rain = None
         self.ws_status = 0
         self.bad_values = 0
-        self.timeSet = False
-        self.lastTimeSet = time.time()
-        self.useArchiveTime = False
+        self.time_set = False
+        self.last_time_set = time.time()
+        self.use_archive_time = False
         self.last_ts = 0
 
+        self.my_cfg = None
+        self.buff = None
+        self.dev = None
+        self.in1 = None
+        self.in2 = None
+        self.in3 = None
+        self.in4 = None
+
+        log.info("driver version is %s", DRIVER_VERSION)
     # end __init__
 
     #--------------------------------------------------------------------------
@@ -441,6 +450,7 @@ class ws6in1(weewx.drivers.AbstractDevice):
     #--------------------------------------------------------------------------
     @property
     def hardware_name(self):
+        """Provides the hardware name of the weather station"""
         return self.model
 
     #-------------------------------------------------------
@@ -453,29 +463,29 @@ class ws6in1(weewx.drivers.AbstractDevice):
     #
     #-------------------------------------------------------
     def get_float(self):
+        """Decodes input data to float"""
 
-        myStr = ""
+        my_str = ""
         end = False
 
-        while self.index + 1 < len(self.buff) and end == False:
-            myChar=str(chr(self.buff[self.index]))
-            myStr = myStr + str(myChar)
+        while self.index + 1 < len(self.buff) and not end:
+            my_char = str(chr(self.buff[self.index]))
+            my_str = my_str + str(my_char)
             self.index = self.index + 1
             if self.buff[self.index] == 0x20:
-                self.index=self.index+1
+                self.index = self.index+1
                 end = True
-        if myStr == "--.-":
+        if my_str == "--.-":
             return None
 
         try:
-            retVal = float(myStr)
-        except ValueError as e:
-            log.error ("get_float::ValueError error: %s  string: %s", e, myStr)
-            retVal = None
+            retval = float(my_str)
+        except ValueError as my_error:
+            log.error("get_float::ValueError error: %s  string: %s", my_error, my_str)
+            retval = None
             self.bad_values = self.bad_values + 1
-            pass
 
-        return retVal
+        return retval
 
     # end def get_float
 
@@ -489,29 +499,29 @@ class ws6in1(weewx.drivers.AbstractDevice):
     #
     #-------------------------------------------------------
     def get_int(self):
+        """Decodes input data to int"""
 
-        myStr = ""
-        end   = False
+        my_str = ""
+        end = False
 
-        while self.index + 1 < len(self.buff) and end == False:
-            myChar=str(chr(self.buff[self.index]))
-            myStr = myStr + str(myChar)
+        while self.index + 1 < len(self.buff) and not end:
+            my_char = str(chr(self.buff[self.index]))
+            my_str = my_str + str(my_char)
             self.index = self.index + 1
             if self.buff[self.index] == 0x20 or self.buff[self.index] == 0x00:
-                self.index=self.index+1
+                self.index = self.index+1
                 end = True
-        if myStr == "--":
+        if my_str == "--":
             return None
 
         try:
-            retVal = int(myStr)
-        except ValueError as e:
-            log.error ("get_int::ValueError error: %s  string: %s", e, myStr)
-            retVal = None
+            retval = int(my_str)
+        except ValueError as my_error:
+            log.error("get_int::ValueError error: %s  string: %s", my_error, my_str)
+            retval = None
             self.bad_values = self.bad_values + 1
-            pass
- 
-        return retVal
+
+        return retval
 
     # end def get_int
 
@@ -522,50 +532,55 @@ class ws6in1(weewx.drivers.AbstractDevice):
     # of the buffer and interprets it as a string.
     #-------------------------------------------------------
     def get_string(self):
+        """Decodes input data to string"""
 
-        myStr=""
+        my_str = ""
         end = False
 
-        while self.index + 1 < len(self.buff) and end == False:
-            myChar=str(chr(self.buff[self.index]))
-            myStr = myStr + str(myChar)
+        while self.index + 1 < len(self.buff) and not end:
+            my_char = str(chr(self.buff[self.index]))
+            my_str = my_str + str(my_char)
             self.index = self.index + 1
             if self.buff[self.index] == 0x20:
-                self.index=self.index+1
+                self.index = self.index+1
                 end = True
 
-        return myStr
+        return my_str
 
     # end def get_string
 
     #--------------------------------------------------------------------------
-    # getArchiveEpoch
+    # get_archive_epoch
     #--------------------------------------------------------------------------
     # calculates the time in seconds since the epoch for the archive time
     #--------------------------------------------------------------------------
     # ws_date gives the archive date expected format is YYYY-MM-DD
-    # ws_time gives the archive time expected format is HH-MM 
-    #--------------------------------------------------------------------------    
-    def getArchiveEpoch(self, ws_date, ws_time):
+    # ws_time gives the archive time expected format is HH-MM
+    #--------------------------------------------------------------------------
+    def get_archive_epoch(self, ws_date, ws_time):
+        """Converts the date time from the console to a unix epoch time"""
+
         try:
-            my_year  = int(ws_date[0:4])
+            my_year = int(ws_date[0:4])
             my_month = int(ws_date[5:7])
-            my_day   = int(ws_date[8:])
+            my_day = int(ws_date[8:])
 
             my_hour = int(ws_time[0:2])
-            my_min  = int(ws_time[3:5])
-            my_sec  = 0
-            my_epoch = (datetime(my_year,my_month,my_day,my_hour,my_min,my_sec) - datetime(1970,1,1)).total_seconds()
-    
-        except ValueError as e:
-            log.error ("getArchiveEpoch::ValueError error: %s  date: %s  time: %s", e, ws_date, ws_time)
+            my_min = int(ws_time[3:5])
+            my_sec = 0
+            my_epoch = (datetime(my_year, my_month, my_day, my_hour, my_min, my_sec) -
+                        datetime(1970, 1, 1)).total_seconds()
+
+        except ValueError as my_error:
+            log.error("get_archive_epoch::ValueError error: %s  date: %s  time: %s",
+                      my_error, ws_date, ws_time)
             my_epoch = None
             self.bad_values = self.bad_values + 1
-            pass
+
         return my_epoch
 
-    # end getArchiveEpoch
-    
+    # end get_archive_epoch
+
     #-------------------------------------------------------
     # rain_delta
     #-------------------------------------------------------
@@ -574,6 +589,7 @@ class ws6in1(weewx.drivers.AbstractDevice):
     # rain_in is the current rain reading (from midnight)
     #-------------------------------------------------------
     def rain_delta(self, rain_in):
+        """determines the rain from the last reading and current"""
 
         # The default is no rain delta.  Only need to check this if
         # last_rain is valid and different to rain_in - otherwise 0.0
@@ -588,7 +604,7 @@ class ws6in1(weewx.drivers.AbstractDevice):
                 # or the station has hiccupped.
                 # Assume the station never hiccups for the moment ...
                 rain_diff = rain_in
-        self.last_rain = rain_in 
+        self.last_rain = rain_in
         return rain_diff
 
     # end def rain_delta
@@ -603,25 +619,26 @@ class ws6in1(weewx.drivers.AbstractDevice):
     # level is the number of 64 byte messages received
     #-------------------------------------------------------
     def decode(self, level):
+        """Main decoder - takes the input data buffer and determines the
+        individual values"""
 
-        self.ws_status  = 0
+        self.ws_status = 0
         self.bad_values = 0
 
         # weewx packet to be returned
         packet = {}
-        
 
         # step 1 join the parts together
-        j=0
+        j = 0
         i = 0
-        self.buff= bytearray()
+        self.buff = bytearray()
         tmp = bytearray()
-    
+
         #lots can go wrong in the decode .. if it does lets skip
         try:
-            
+
             # loop for j = 1 to level
-            j=1
+            j = 1
             while j <= level:
                 if j == 1:
                     tmp = bytearray(self.in1)
@@ -636,22 +653,21 @@ class ws6in1(weewx.drivers.AbstractDevice):
                     log.error("decode: unexpected level=%d", j)
 
                 # construct the buffer
-                j = j+1        
-                k=7
+                j = j + 1
+                k = 7
                 while k < 61:
                     self.buff.append(tmp[k])
-                    buffSize = i+1;
-                    i = i+1
-                    k=k+1
+                    i = i + 1
+                    k = k + 1
                     if j > level and tmp[k] == 0x00:
                         self.buff.append(0x20) # end with a space
-                        k=64
+                        k = 64
 
             # buff should contain the ascii values that are needed
             self.index = 0
 
             # get an integer - we throw this away
-            rubbish = self.get_int()
+            self.get_int()
 
             ws_date = self.get_string()
 
@@ -675,7 +691,8 @@ class ws6in1(weewx.drivers.AbstractDevice):
 
             wind_dir_deg = self.get_int()
 
-            wind_dir_str = self.get_string()
+            # wind_dir_str =
+            self.get_string()
 
             barom_rel = self.get_int()
 
@@ -686,31 +703,31 @@ class ws6in1(weewx.drivers.AbstractDevice):
             dewpoint = self.get_float()
 
             # not sure what this float is but discard
-            rubbish2 = self.get_float()
+            self.get_float()
 
             ## get the 7 temp/humidity sensor data
             ## I don't have one so cannot test except negatively
-            extraTemp1  = self.get_float()
-            extraHumid1 = self.get_int()
-            extraTemp2  = self.get_float()
-            extraHumid2 = self.get_int()
-            extraTemp3  = self.get_float()
-            extraHumid3 = self.get_int()
-            extraTemp4  = self.get_float()
-            extraHumid4 = self.get_int()
-            extraTemp5  = self.get_float()
-            extraHumid5 = self.get_int()
-            extraTemp6  = self.get_float()
-            extraHumid6 = self.get_int()
-            extraTemp7  = self.get_float()
-            extraHumid7 = self.get_int()
+            extra_temp1 = self.get_float()
+            extra_humid1 = self.get_int()
+            extra_temp2 = self.get_float()
+            extra_humid2 = self.get_int()
+            extra_temp3 = self.get_float()
+            extra_humid3 = self.get_int()
+            extra_temp4 = self.get_float()
+            extra_humid4 = self.get_int()
+            extra_temp5 = self.get_float()
+            extra_humid5 = self.get_int()
+            extra_temp6 = self.get_float()
+            extra_humid6 = self.get_int()
+            extra_temp7 = self.get_float()
+            extra_humid7 = self.get_int()
 
             my_interval = 0
-            if self.useArchiveTime:
+            if self.use_archive_time:
                 log.debug("decode::gettint time")
-                my_time = self.getArchiveEpoch(ws_date, ws_time)
+                my_time = self.get_archive_epoch(ws_date, ws_time)
 
-                if (my_time != None):
+                if my_time != None:
                     my_interval = my_time - self.last_ts
                     if my_interval < 0:
                         my_interval = 0
@@ -729,7 +746,7 @@ class ws6in1(weewx.drivers.AbstractDevice):
             packet['inHumidity'] = in_humid
             packet['outTemp'] = out_temp
             packet['outHumidity'] = out_humid
-            packet['dayRain']  = rain1 * 0.1 # convert to cm
+            packet['dayRain'] = rain1 * 0.1 # convert to cm
             packet['hourRain'] = rain2 * 0.1 # convert to cm
             packet['rain'] = self.rain_delta(rain1) * 0.1 # convert to cm
             packet['windSpeed'] = wind_speed
@@ -739,54 +756,58 @@ class ws6in1(weewx.drivers.AbstractDevice):
             packet['barometer'] = barom_rel
             packet['UV'] = uv_index
             packet['dewpoint'] = dewpoint
-            packet['extraHumid1'] = extraHumid1
-            packet['extraHumid2'] = extraHumid2
-            packet['extraHumid3'] = extraHumid3
-            packet['extraHumid4'] = extraHumid4
-            packet['extraHumid5'] = extraHumid5
-            packet['extraHumid6'] = extraHumid6
-            packet['extraHumid7'] = extraHumid7
-            packet['extraTemp1'] = extraTemp1
-            packet['extraTemp2'] = extraTemp2
-            packet['extraTemp3'] = extraTemp3
-            packet['extraTemp4'] = extraTemp4
-            packet['extraTemp5'] = extraTemp5
-            packet['extraTemp6'] = extraTemp6
-            packet['extraTemp7'] = extraTemp7
+            packet['extraHumid1'] = extra_humid1
+            packet['extraHumid2'] = extra_humid2
+            packet['extraHumid3'] = extra_humid3
+            packet['extraHumid4'] = extra_humid4
+            packet['extraHumid5'] = extra_humid5
+            packet['extraHumid6'] = extra_humid6
+            packet['extraHumid7'] = extra_humid7
+            packet['extraTemp1'] = extra_temp1
+            packet['extraTemp2'] = extra_temp2
+            packet['extraTemp3'] = extra_temp3
+            packet['extraTemp4'] = extra_temp4
+            packet['extraTemp5'] = extra_temp5
+            packet['extraTemp6'] = extra_temp6
+            packet['extraTemp7'] = extra_temp7
             self.ws_status = 1
 
-            if self.useArchiveTime:
-                if my_time == None:
+            if self.use_archive_time:
+                if my_time is None:
                     self.ws_status = 0
                     log.warning("decode:: bad Archive Time - archive record not recoverable")
                 else:
                     packet['interval'] = my_interval
 
             if self.bad_values > 0:
-                log.warning("decode: %d bad values occurred", self.bad_values)
-                print ("buflen="+str(len(self.buff))+"  level="+str(level))
-                for i in range (len(self.buff)):
-                    print(str(self.buff[i]), end=" ")
-                print ("int1:")
-                for i in range (len(self.in1)):
-                    print(str(self.in1[i]), end=" ")
+                log.warning("decode: %d bad values occurred - rejecting this set of readings",
+                            self.bad_values)
+                print("buflen=" + str(len(self.buff)) + "  level=" + str(level))
+                for i in range(len(self.buff)):
+                    print(str(self.buff[i]) + " ")
+                print("int1:")
+                for i in range(len(self.in1)):
+                    print(str(self.in1[i]) + " ")
 
-                # could set ws_status to 0 which would mean record is dropped
-            
-        except IOError as e:
-            log.error ("decode::IOError error: %s", e)
+                # bad_values occurring in the start records: wrorong time and
+                # missing values means it is better to reject this set of data
+                # reading rather than try and process them (version 0.6 tried
+                # to continue)
+                self.ws_status = 0
+
+        except IOError as my_error:
+            log.error("decode::IOError error: %s", my_error)
             self.ws_status = 0
-            pass
-        except ValueError as e:
-            log.error ("decode::ValueError error: %s", e)
-            print ("buflen="+str(len(self.buff))+"  level="+str(level))
-            for i in range (len(self.buff)):
-                print(str(self.buff[i]), end=" ")
-            print ("int1:")
-            for i in range (len(self.in1)):
-                print(str(self.in1[i]), end=" ")
+
+        except ValueError as my_error:
+            log.error("decode::ValueError error: %s", my_error)
+            print("buflen="+str(len(self.buff))+"  level=" + str(level))
+            for i in range(len(self.buff)):
+                print(str(self.buff[i]) + " ")
+            print("int1:")
+            for i in range(len(self.in1)):
+                print(str(self.in1[i])+" ")
             self.ws_status = 0
-            pass
 
         return packet
 
@@ -798,94 +819,80 @@ class ws6in1(weewx.drivers.AbstractDevice):
     # Expect to find the 6 in 1 (+7).  Not finding it is a
     # show stopper
     #-------------------------------------------------------
-    def findMyDevice(self):
+    def find_my_device(self):
+        """Gets the usb device from the vendor attributes"""
 
         self.dev = usb.core.find(idVendor=self.vendor, idProduct=self.product)
 
         if self.dev is None:
-            log.critical("findMyDevice: dev not found")
+            log.critical("find_my_device: dev not found")
             raise ValueError('Device not found')
 
         # check if kernel driver
-        log.info("findMyDevice::success getting dev")
+        log.info("find_my_device::success getting dev")
 
-    # end findMyDevice
+    # end find_my_device
 
     #-------------------------------------------------------
-    # initialiseMyDevice
+    # initialise_my_device
     #-------------------------------------------------------
     # Various commands that initialise the weather station
     # before the main loop is initiated
     #-------------------------------------------------------
-    def initialiseMyDevice(self):
+    def initialise_my_device(self):
+        """Initialises the usb connection for communication with the console"""
 
         # check if the kernel has it ...
         if self.dev.is_kernel_driver_active(0):
-            log.debug("initialiseMyDevice::need to detach from the kernel")
+            log.debug("initialise_my_device::need to detach from the kernel")
             self.dev.detach_kernel_driver(0)
-            log.debug("initialiseMyDevice::detached")
-            
+            log.debug("initialise_my_device::detached")
+
         # reset the device
         self.dev.reset()
 
         # dev is known ... log some parameters
-        log.debug("initialiseMyDevice::dev.bLength            = %s", self.dev.bLength)
-        log.debug("initialiseMyDevice::dev.bNumConfigurations = %s", self.dev.bNumConfigurations)
-        log.debug("initialiseMyDevice::dev.bDeviceClass       = %s", self.dev.bDeviceClass)
+        log.debug("initialise_my_device::dev.bLength            = %s", self.dev.bLength)
+        log.debug("initialise_my_device::dev.bNumConfigurations = %s", self.dev.bNumConfigurations)
+        log.debug("initialise_my_device::dev.bDeviceClass       = %s", self.dev.bDeviceClass)
 
         # get the active configuration
-        self.myCfg = self.dev.get_active_configuration()
+        self.my_cfg = self.dev.get_active_configuration()
 
-        if self.myCfg is None:
-            log.error ("initialiseMyDevice: cfg not found")
+        if self.my_cfg is None:
+            log.error("initialise_my_device: cfg not found")
             raise ValueError('configuration not found')
 
         # cfg is known ... log some parameters
-        log.info("initialiseMyDevice::success getting configuration")
-        log.info("initialiseMyDevice::myCfg.bConfigurationValue = %s", self.myCfg.bConfigurationValue)
-        log.info("initialiseMyDevice::myCfg.bNumInterfaces      = %s\n", self.myCfg.bNumInterfaces)
+        log.info("initialise_my_device::success getting configuration")
+        log.info("initialise_my_device::my_cfg.bConfigurationValue = %s",
+                 self.my_cfg.bConfigurationValue)
+        log.info("initialise_my_device::my_cfg.bNumInterfaces      = %s\n",
+                 self.my_cfg.bNumInterfaces)
 
         # set parameters
-        usbRequestType = 0x0a
-        wLength = 0
+        usb_request_type = 0x0a
+        wlength = 0
 
         # set to idle
         try:
-            retval = dev.ctrl_transfer(
-                0x21,            # USB Request Type
-                usbRequestType,  # USB Request
-                wLength)         # WValue
+            #retval =
+            self.dev.ctrl_transfer(
+                0x21,              # USB Request Type
+                usb_request_type,  # USB Request
+                wlength)           # WValue
 
-            log.debug("initialiseMyDevice::Set idle done")
+            log.debug("initialise_my_device::Set idle done")
 
-        except:
-            log.info("initialiseMyDevice::Exception setting idle (this is ok)")
-            pass
-
-        # set parameters
-        usbRequestType = 0x22
-        WLength = 100
-
-        # get HID Desriptor
-        try:
-            retval = dev.ctrl_transfer(
-                0x81,            # USB Request Type
-                usbRequestType,  # USB Request
-                wLength)         # WValue
-
-            log.debug("initialiseMyDevice::Sent HID descriptor length")
-
-        except:
-            log.info("initialiseMyDevice::HID Descriptor got")
-            pass
+        except ValueError:
+            log.info("initialise_my_device::Exception setting idle (this is ok)")
 
         self.initialised = True
 
         # set parameters
         usb_request = 0x09
-        wvalue=0x0200
+        wvalue = 0x0200
         timeout = 30000  # Milliseconds
-        decode_ok = False
         start_buf = struct.pack('BBBBBBBB',
                                 0xFC,
                                 0x07,
@@ -897,7 +904,7 @@ class ws6in1(weewx.drivers.AbstractDevice):
                                 0xFD)
 
         try:
-            retval = self.dev.ctrl_transfer(
+            self.dev.ctrl_transfer(
                 0x21,         # USB Request Type
                 usb_request,  # USB Request
                 wvalue,       # WValue
@@ -905,13 +912,13 @@ class ws6in1(weewx.drivers.AbstractDevice):
                 start_buf,    # Message
                 timeout)
 
-            out=self.dev.read(0x81,64,timeout)
+            #out=
+            self.dev.read(0x81, 64, timeout)
             # not processing the initiatisation read ...
-        except:
-            log.error("initialiseMyDevice::initialisation start failed")
-            pass
+        except ValueError:
+            log.error("initialise_my_device::initialisation start failed")
 
-    # end dev initialiseMyDevice
+    # end dev initialise_my_device
 
 
     #---------------------------------------------------------------
@@ -921,20 +928,22 @@ class ws6in1(weewx.drivers.AbstractDevice):
     # it calls decode to write the output
     #---------------------------------------------------------------
     def genLoopPackets(self):
+        """Main function that gets current data from the console and calls decode to
+        decode it.  Results are 'yielded' to the weewx engine"""
 
-        self.useArchiveTime = False
+        self.use_archive_time = False
         tcount = 0
         self.ws_status = 0
 
-        log.debug ("genLoopPackets: starting read loop ...")
+        log.debug("genLoopPackets: starting read loop ...")
 
         if not self.initialised:
-            self.findMyDevice()
-            self.initialiseMyDevice()
+            self.find_my_device()
+            self.initialise_my_device()
 
         # set parameters
         usb_request = 0x09
-        wvalue=0x0200
+        wvalue = 0x0200
         timeout = 30000  # Milliseconds 30 seconds
         decode_ok = False
 
@@ -952,16 +961,16 @@ class ws6in1(weewx.drivers.AbstractDevice):
                                0x97,
                                0x0B,
                                0xFD)
-    
-        ack1_buf = struct.pack('BBBBBBBB',
-                               0xFC,
-                               0xD4,
-                               0x01,
-                               0x00,
-                               0x00,
-                               0xE1,
-                               0xBF,
-                               0xFD)
+
+        #ack1_buf = struct.pack('BBBBBBBB',
+        #                       0xFC,
+        #                       0xD4,
+        #                       0x01,
+        #                       0x00,
+        #                       0x00,
+        #                       0xE1,
+        #                       0xBF,
+        #                       0xFD)
 
         now_buf = struct.pack('BBBBBBBB',
                               0xFC,
@@ -972,12 +981,12 @@ class ws6in1(weewx.drivers.AbstractDevice):
                               0x2F,
                               0xA1,
                               0xFD)
-    
+
         # do some looping
         packet = {}
         packet['usUnits'] = weewx.METRIC
 
-        count  = 0
+        count = 0
         while True:
             count += 1
 
@@ -989,7 +998,8 @@ class ws6in1(weewx.drivers.AbstractDevice):
                 buf = now_buf
 
             try:
-                retval = self.dev.ctrl_transfer(
+                #retval =
+                self.dev.ctrl_transfer(
                     0x21,         # USB Request Type
                     usb_request,  # USB Request
                     wvalue,       # WValue
@@ -997,45 +1007,46 @@ class ws6in1(weewx.drivers.AbstractDevice):
                     buf,          # Message
                     timeout)
 
-                out=self.dev.read(0x81,64,timeout)
+                out = self.dev.read(0x81, 64, timeout)
 
                 # check to see if this is of interest
-                a = out[0]
-                b = out[1]
-                c = out[5]
-                d = out[63]
+                loc_a = out[0]
+                #b = out[1]
+                loc_c = out[5]
+                loc_d = out[63]
 
-                if a == 0xfe:
+                if loc_a == 0xfe:
                     crc_ok = True
                     crc_a = crcfunc(out[0:63])
-                    if d != 0xfd or crc_a != 0:
+                    if loc_d != 0xfd or crc_a != 0:
                         crc_ok = False
                         decode_ok = False
-                        log.warning ("genLoopPackets: bad CRC")
+                        log.warning("genLoopPackets: bad CRC")
 
-                    if (c == 0x11 or c == 0x21 or c == 0x31 or c == 0x41) and crc_ok:
+                    if (loc_c == 0x11 or loc_c == 0x21 or loc_c == 0x31 or
+                            loc_c == 0x41) and crc_ok:
                         self.in1 = bytearray(out)
                         decode_ok = True
 
-                        if c == 0x11:
+                        if loc_c == 0x11:
                             level = 1
                             packet = self.decode(level)
 
-                    elif (c == 0x22 or c == 0x32 or c == 0x42) and decode_ok:
+                    elif (loc_c == 0x22 or loc_c == 0x32 or loc_c == 0x42) and decode_ok:
                         self.in2 = bytearray(out)
 
-                        if c == 0x22:
+                        if loc_c == 0x22:
                             level = 2
                             packet = self.decode(level)
 
-                    elif (c == 0x33 or c == 0x43) and decode_ok:
+                    elif (loc_c == 0x33 or loc_c == 0x43) and decode_ok:
                         self.in3 = bytearray(out)
 
-                        if c == 0x33:
+                        if loc_c == 0x33:
                             level = 3
                             packet = self.decode(level)
 
-                    elif c == 0x44 and decode_ok:
+                    elif loc_c == 0x44 and decode_ok:
                         self.in4 = bytearray(out)
                         level = 4
                         packet = self.decode(level)
@@ -1043,24 +1054,23 @@ class ws6in1(weewx.drivers.AbstractDevice):
                     elif not decode_ok:
                         pass
                     else:
-                        log.debug("genLoopPackets::unexpected value of c=" + str(c))
+                        log.debug("genLoopPackets::unexpected value of c=%s", str(loc_c))
 
             # the exits below are good for the beta, better as pass
             # for issued version (and most not needed)
-            except IOError as e:
-                log.error ("genLoopPackets::IOError error: %s", e)
+            except IOError as my_error:
+                log.error("genLoopPackets::IOError error: %s", my_error)
                 # the most likely explanation is a timeout
                 tcount = tcount + 1
                 count = 0
                 if tcount > 5:
-                    log.critical ("genLoopPackets::IOError critical (too many timeouts): %s", e)
+                    log.critical("genLoopPackets::IOError critical (too many timeouts): %s",
+                                 my_error)
                     exit()
                 try:
-                    out=self.dev.read(0x81,64,5000)
-                except IOError as e:
-                    log.error ("genLoopPackets::timeout on read as well: %s", e)
-                    pass
-                pass
+                    out = self.dev.read(0x81, 64, 5000)
+                except IOError as my_error:
+                    log.error("genLoopPackets::timeout on read as well: %s", my_error)
 
             if self.ws_status > 0:
                 tcount = 0
@@ -1069,13 +1079,13 @@ class ws6in1(weewx.drivers.AbstractDevice):
                 self.ws_status = 0
 
             # set the time every 24 hours (and initially after 20 loops to get initialisation done)
-            if count > 20 and self.timeSet == False:
+            if count > 20 and not self.time_set:
                 self.setTime()
-                self.timeSet = True
-                self.lastTimeSet += 86400
-            elif self.timeSet == True:
-                if time.time() > self.lastTimeSet:
-                    self.timeSet = False
+                self.time_set = True
+                self.last_time_set += 86400
+            elif self.time_set:
+                if time.time() > self.last_time_set:
+                    self.time_set = False
 
         # end while forever loop
 
@@ -1091,8 +1101,10 @@ class ws6in1(weewx.drivers.AbstractDevice):
     # since_ts: epoch time in seconds
     #--------------------------------------------------------------------------
     def genStartupRecords(self, since_ts):
+        """Main function that gets the historic data from the console and calls decode to
+        decode it.  It then yields newer records to the weewx engine"""
 
-        self.useArchiveTime = True
+        self.use_archive_time = True
         self.last_ts = since_ts
         tcount = 0
         self.ws_status = 0
@@ -1100,14 +1112,13 @@ class ws6in1(weewx.drivers.AbstractDevice):
         log.debug("genStartupRecords: starting archive loop ... %d", since_ts)
 
         if not self.initialised:
-            self.findMyDevice()
-            self.initialiseMyDevice()
+            self.find_my_device()
+            self.initialise_my_device()
 
         # set parameters
         usb_request = 0x09
-        wvalue=0x0200
+        wvalue = 0x0200
         timeout = 30000  # Milliseconds (30 seconds)
-        decode_ok = False
 
         # create function from crcmod to check CRCs
         crcfunc = crcmod.predefined.mkCrcFun('xmodem')
@@ -1122,7 +1133,7 @@ class ws6in1(weewx.drivers.AbstractDevice):
                                0x08,
                                0x38,
                                0xFD)
-    
+
         ack2_buf = struct.pack('BBBBBBBB',
                                0xFC,
                                0xD5,
@@ -1132,7 +1143,7 @@ class ws6in1(weewx.drivers.AbstractDevice):
                                0x97,
                                0x0B,
                                0xFD)
-        
+
         nack_buf = struct.pack('BBBBBBBB',
                                0xFC,
                                0xD5,
@@ -1146,12 +1157,12 @@ class ws6in1(weewx.drivers.AbstractDevice):
         packet = {}
         packet['usUnits'] = weewx.METRIC
 
-        count  = 0
-        moreHistory = True
-        badCrc = False
+        count = 0
+        more_history = True
+        bad_crc = False
         level = 0
 
-        while moreHistory:
+        while more_history:
             count += 1
 
             # buf is the command passed to the console
@@ -1160,12 +1171,13 @@ class ws6in1(weewx.drivers.AbstractDevice):
             buf = ack2_buf
             if count == 1:
                 buf = hist_buf
-            elif badCrc:
+            elif bad_crc:
                 buf = nack_buf
-                badCrc = False
+                bad_crc = False
 
             try:
-                retval = self.dev.ctrl_transfer(
+                #retval =
+                self.dev.ctrl_transfer(
                     0x21,         # USB Request Type
                     usb_request,  # USB Request
                     wvalue,       # WValue
@@ -1173,73 +1185,74 @@ class ws6in1(weewx.drivers.AbstractDevice):
                     buf,          # Message
                     timeout)
 
-                out=self.dev.read(0x81,64,timeout)
+                out = self.dev.read(0x81, 64, timeout)
 
                 # check to see if this is of interest
-                a = out[0]
-                c = out[5]
-                d = out[63]
+                loc_a = out[0]
+                loc_c = out[5]
+                loc_d = out[63]
                 level = 0
-                b1 = out[1]
-                b2 = out[2]
-                b3 = out[3]
-                b4 = out[4]
+                loc_b1 = out[1]
+                loc_b2 = out[2]
+                loc_b3 = out[3]
+                loc_b4 = out[4]
 
                 # check for the case where the console has no data
-                if b1 == 0xff and b2 == 0xff and b3 == 0xff and b4 == 0xff:
-                    moreHistory = False
+                if loc_b1 == 0xff and loc_b2 == 0xff and loc_b3 == 0xff and loc_b4 == 0xff:
+                    more_history = False
 
-                if moreHistory and a == 0xfe and (b1 > 0 or b2 > 0):
+                if more_history and loc_a == 0xfe and (loc_b1 > 0 or loc_b2 > 0):
                     crc_ok = True
                     crc_a = crcfunc(out[0:63])
-                    if d != 0xfd or crc_a != 0:
+                    if loc_d != 0xfd or crc_a != 0:
                         crc_ok = False
-                        badCrc = True
-                        log.warning ("genStartupRecords: bad CRC")
+                        bad_crc = True
+                        log.warning("genStartupRecords: bad CRC")
 
-                    if (c == 0x11 or c == 0x21 or c == 0x31 or c == 0x41) and crc_ok:
+                    if (loc_c == 0x11 or loc_c == 0x21 or loc_c == 0x31 or
+                            loc_c == 0x41) and crc_ok:
                         self.in1 = bytearray(out)
 
-                        if c == 0x11:
+                        if loc_c == 0x11:
                             level = 1
                             packet = self.decode(level)
 
-                    elif (c == 0x22 or c == 0x32 or c == 0x42) and crc_ok:
+                    elif (loc_c == 0x22 or loc_c == 0x32 or loc_c == 0x42) and crc_ok:
                         self.in2 = bytearray(out)
 
-                        if c == 0x22:
+                        if loc_c == 0x22:
                             level = 2
                             packet = self.decode(level)
 
-                    elif (c == 0x33 or c == 0x43) and crc_ok:
+                    elif (loc_c == 0x33 or loc_c == 0x43) and crc_ok:
                         self.in3 = bytearray(out)
 
-                        if c == 0x33:
+                        if loc_c == 0x33:
                             level = 3
                             packet = self.decode(level)
 
-                    elif c == 0x44 and crc_ok:
+                    elif loc_c == 0x44 and crc_ok:
                         self.in4 = bytearray(out)
                         level = 4
                         packet = self.decode(level)
 
             # the exits below are good for the beta, better as pass
             # for issued version (and most not needed)
-            except IOError as e:
-                log.error ("genStartupRecords::IOError error: %s", e)
+            except IOError as my_error:
+                log.error("genStartupRecords::IOError error: %s", my_error)
                 # the most likely explanation is a timeout
                 tcount = tcount + 1
                 count = 0
                 if tcount > 5:
-                    log.critical ("genStartupRecords::IOError critical (too many timeouts): %s", e)
+                    log.critical("genStartupRecords::IOError critical (too many timeouts): %s",
+                                 my_error)
                     exit()
                 try:
-                    out=self.dev.read(0x81,64,5000)
-                except IOError as e:
-                    log.error ("genStartupRecords::timeout on read as well: %s", e)
-                    pass
-                log.error ("genStartupRecords::IOError error: %s", e)
-                pass
+                    out = self.dev.read(0x81, 64, 5000)
+                except IOError as my_error:
+                    log.error("genStartupRecords::timeout on read as well: %s", my_error)
+
+                log.error("genStartupRecords::IOError error: %s", my_error)
 
             if self.ws_status > 0:
                 # check that time is the wanted range
@@ -1252,13 +1265,13 @@ class ws6in1(weewx.drivers.AbstractDevice):
 
             # need to check if this was the last history item
             if level > 0:
-                if b1 == b3 and b2 == b4:
-                    moreHistory = False
-            
+                if loc_b1 == loc_b3 and loc_b2 == loc_b4:
+                    more_history = False
+
         # end while still getting history
 
     # end def genStartupRecords
-    
+
     #--------------------------------------------------------------------------
     # setTime
     #--------------------------------------------------------------------------
@@ -1270,33 +1283,35 @@ class ws6in1(weewx.drivers.AbstractDevice):
     #
     #--------------------------------------------------------------------------
     def setTime(self):
+        """uses local date and time to set the consoles date and time"""
 
         # create function from crcmod to check CRCs
         crcfunc = crcmod.predefined.mkCrcFun('xmodem')
 
         # First get the date and time
         my_now = datetime.now()
-        my_year  = my_now.year - 2000
+        my_year = my_now.year - 2000
         my_month = my_now.month
-        my_day   = my_now.day
+        my_day = my_now.day
 
         # create buffer for date
         date_buf = struct.pack('BBBBBBBB',
-                               0xFC, 0x08, my_year, my_month, my_day, 0x00, 0x00, 0xFD);
-        crc=crcfunc(date_buf[0:5])
+                               0xFC, 0x08, my_year, my_month, my_day, 0x00, 0x00, 0xFD)
+        crc = crcfunc(date_buf[0:5])
         crc1 = crc>>8
         crc2 = crc - (crc1<<8)
         date_buf = struct.pack('BBBBBBBB',
-                               0xFC, 0x08, my_year, my_month, my_day, crc1, crc2, 0xFD);
+                               0xFC, 0x08, my_year, my_month, my_day, crc1, crc2, 0xFD)
 
         # set parameters
         usb_request = 0x09
-        wvalue      = 0x0200
-        timeout     = 30000  # Milliseconds
+        wvalue = 0x0200
+        timeout = 30000  # Milliseconds
 
         # tranfer date
         try:
-            retval = self.dev.ctrl_transfer(
+            #retval =
+            self.dev.ctrl_transfer(
                 0x21,         # USB Request Type
                 usb_request,  # USB Request
                 wvalue,       # WValue
@@ -1304,25 +1319,27 @@ class ws6in1(weewx.drivers.AbstractDevice):
                 date_buf,     # Message
                 timeout)
 
-            out=self.dev.read(0x81,64,timeout)
+            #out=
+            self.dev.read(0x81, 64, timeout)
 
             # get the time again (could be 10 seconds later ...)
             my_now = datetime.now()
-            my_hour  = my_now.hour
-            my_min   = my_now.minute
-            my_sec   = my_now.second
+            my_hour = my_now.hour
+            my_min = my_now.minute
+            my_sec = my_now.second
 
             # create buffer for time
             time_buf = struct.pack('BBBBBBBB',
-                                   0xFC, 0x09, my_hour, my_min, my_sec, 0x00, 0x00, 0xFD);
-            crc=crcfunc(time_buf[0:5])
+                                   0xFC, 0x09, my_hour, my_min, my_sec, 0x00, 0x00, 0xFD)
+            crc = crcfunc(time_buf[0:5])
             crc1 = crc>>8
             crc2 = crc - (crc1<<8)
             time_buf = struct.pack('BBBBBBBB',
-                                   0xFC, 0x09, my_hour, my_min, my_sec, crc1, crc2, 0xFD);
+                                   0xFC, 0x09, my_hour, my_min, my_sec, crc1, crc2, 0xFD)
             # no checking, it worked or it didn't ....
-            
-            retval = self.dev.ctrl_transfer(
+
+            #retval =
+            self.dev.ctrl_transfer(
                 0x21,         # USB Request Type
                 usb_request,  # USB Request
                 wvalue,       # WValue
@@ -1330,23 +1347,22 @@ class ws6in1(weewx.drivers.AbstractDevice):
                 time_buf,     # Message
                 timeout)
 
-            out=self.dev.read(0x81,64,timeout)
+            #out=
+            self.dev.read(0x81, 64, timeout)
             # no checking, it worked or it didn't ....
 
-        except IOError as e:
-            log.error ("setTime IOError error: %s", e)
-            pass
-        except ValueError as e:
-            log.error ("setTime ValueError error: %s", e)
-            pass
+        except IOError as my_error:
+            log.error("setTime IOError error: %s", my_error)
+
+        except ValueError as my_error:
+            log.error("setTime ValueError error: %s", my_error)
 
     # end def setTime
-
 
     #--------------------------------------------------------------------------
     # getTime
     #--------------------------------------------------------------------------
-    # Function to get the time in the console 
+    # Function to get the time in the console
     #
     # There is a fundamental problem with the protocol for getting the time
     # The time is only returned to the nearest minute.
@@ -1370,6 +1386,6 @@ class ws6in1(weewx.drivers.AbstractDevice):
     # sets of records - not good, and this will happen every 5 minutes.
     #--------------------------------------------------------------------------
     # def genStartupRecords(self, since_ts):
-    # end def genStartupRecords    
+    # end def genStartupRecords
 
 # end class ws6in1

@@ -9,10 +9,13 @@ def loader():
 class WS6in1Installer(ExtensionInstaller):
     def __init__(self):
         super(WS6in1Installer, self).__init__(
-            version="0.2",
+            version="0.7",
             name='WS6in1',
             description='Collect data from WS6in1 PC connected console',
             author="Bob Atchley",
             author_email="bob.atchley@gmail.com",
-            files=[('bin/user', ['bin/user/ws6in1.py'])]
+            files=[('bin/user',
+                    ['bin/user/ws6in1.py',
+                     'bin/user/csv_ws6in1'])
+            ]
         )
