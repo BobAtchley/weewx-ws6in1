@@ -140,7 +140,7 @@ class Ws6in1Standalone():
             if self.buff[self.index] == 0x20 or self.buff[self.index] == 0x00:
                 self.index = self.index+1
                 end = True
-        if my_str == "--":
+        if my_str == "--" or my_str == "---":
             return None
 
         try:

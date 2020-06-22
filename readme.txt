@@ -39,6 +39,10 @@ wee_config --reconfigure
 
 Note: use sudo if you get permission errors
 
+Note: 'model' is optionally supported in the WS6in1 area of weewx.conf file
+e.g. model = "Garni 935PC"
+WS6in1 is used if model parameter is not defined
+
 5) start weewx
 
 sudo /etc/init.d/weewx start

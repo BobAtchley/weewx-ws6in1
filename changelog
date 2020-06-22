@@ -1,3 +1,8 @@
+0.8 2020-06-22
+* ArendPWS reports that wind direction can have value '---' if it is absent, so
+  added this check to the get_int decoder utility.
+* 'model' is optionally supported in the weewx.conf file within the WS6in1 area.
+
 0.7 2020-06-14
 * When bad values are recieved ws6in1 now rejects that set of readings in case
   any missing data items are then associated with the wrong parameters.

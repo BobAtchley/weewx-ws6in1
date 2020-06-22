@@ -375,7 +375,7 @@ import weewx.drivers
 log = logging.getLogger(__name__)
 
 DRIVER_NAME = 'WS6in1'
-DRIVER_VERSION = "0.7"
+DRIVER_VERSION = "0.8"
 
 #------------------------------------------------------------------------------
 # loader
@@ -404,13 +404,20 @@ class ws6in1(weewx.drivers.AbstractDevice):
 
     #-------------------------------------------------------
     # Constructor
+    #
+    # stn_dict contains the input parameters - the only expected one is the model
+    # the default is WS6in1
     #-------------------------------------------------------
     def __init__(self, **stn_dict):
+
+        # get data from the configuration if available
+        self.model = stn_dict.get('model', 'WS6in1')
+
+        # initialise other parameters
         self.initialised = False
         self.index = 0
         self.vendor = 0x1941
         self.product = 0x8021
-        self.model = "WS6in1"
         self.last_rain = None
         self.ws_status = 0
         self.bad_values = 0
@@ -427,7 +434,7 @@ class ws6in1(weewx.drivers.AbstractDevice):
         self.in3 = None
         self.in4 = None
 
-        log.info("driver version is %s", DRIVER_VERSION)
+        log.info("driver version is %s, Model is %s", DRIVER_VERSION, self.model)
     # end __init__
 
     #--------------------------------------------------------------------------
@@ -511,7 +518,7 @@ class ws6in1(weewx.drivers.AbstractDevice):
             if self.buff[self.index] == 0x20 or self.buff[self.index] == 0x00:
                 self.index = self.index+1
                 end = True
-        if my_str == "--":
+        if my_str == "--" or my_str == "---":
             return None
 
         try:
