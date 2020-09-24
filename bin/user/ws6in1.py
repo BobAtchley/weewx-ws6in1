@@ -568,15 +568,9 @@ class ws6in1(weewx.drivers.AbstractDevice):
         """Converts the date time from the console to a unix epoch time"""
 
         try:
-            my_year = int(ws_date[0:4])
-            my_month = int(ws_date[5:7])
-            my_day = int(ws_date[8:])
-
-            my_hour = int(ws_time[0:2])
-            my_min = int(ws_time[3:5])
-            my_sec = 0
-            my_epoch = (datetime(my_year, my_month, my_day, my_hour, my_min, my_sec) -
-                        datetime(1970, 1, 1)).total_seconds()
+            date_time = ws_date + ' ' + ws_time + ':00'			
+            pattern = '%Y-%m-%d %H:%M:%S'			
+            my_epoch = int(time.mktime(time.strptime(date_time, pattern)))
 
         except ValueError as my_error:
             log.error("get_archive_epoch::ValueError error: %s  date: %s  time: %s",
@@ -688,9 +682,8 @@ class ws6in1(weewx.drivers.AbstractDevice):
 
             out_humid = self.get_int()
 
-            rain1 = self.get_float()
-
-            rain2 = self.get_float()
+            rain_day = self.get_float()
+            rain_rate = self.get_float()
 
             wind_speed = self.get_float()
 
@@ -709,11 +702,9 @@ class ws6in1(weewx.drivers.AbstractDevice):
 
             dewpoint = self.get_float()
 
-            # not sure what this float is but discard
-            self.get_float()
+            heatindex = self.get_float()
 
             ## get the 7 temp/humidity sensor data
-            ## I don't have one so cannot test except negatively
             extra_temp1 = self.get_float()
             extra_humid1 = self.get_int()
             extra_temp2 = self.get_float()
@@ -753,9 +744,9 @@ class ws6in1(weewx.drivers.AbstractDevice):
             packet['inHumidity'] = in_humid
             packet['outTemp'] = out_temp
             packet['outHumidity'] = out_humid
-            packet['dayRain'] = rain1 * 0.1 # convert to cm
-            packet['hourRain'] = rain2 * 0.1 # convert to cm
-            packet['rain'] = self.rain_delta(rain1) * 0.1 # convert to cm
+            packet['dayRain'] = rain_day * 0.1 # convert to cm
+            packet['rainRate'] = rain_rate * 0.1 # convert to cm   
+            packet['rain'] = self.rain_delta(rain_day) * 0.1 # convert to cm
             packet['windSpeed'] = wind_speed
             packet['windGust'] = wind_gust
             packet['windDir'] = wind_dir_deg
@@ -763,6 +754,7 @@ class ws6in1(weewx.drivers.AbstractDevice):
             packet['barometer'] = barom_rel
             packet['UV'] = uv_index
             packet['dewpoint'] = dewpoint
+            packet['heatindex'] = heatindex
             packet['extraHumid1'] = extra_humid1
             packet['extraHumid2'] = extra_humid2
             packet['extraHumid3'] = extra_humid3

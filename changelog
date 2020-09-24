@@ -1,3 +1,9 @@
+0.9 2020-09-08
+* LocalTime issue with backfill fixed (thanks ArendPWS).  Note: There are
+  potential problems with summertime changeovers.  See readme.txt
+* HeatIndex is now decoded and passed to weewx (thanks ArendPWS)
+* rainRate is now properly passed from the console (thanks ArendPWS)
+
 0.8 2020-06-22
 * ArendPWS reports that wind direction can have value '---' if it is absent, so
   added this check to the get_int decoder utility.

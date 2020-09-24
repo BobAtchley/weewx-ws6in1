@@ -7,6 +7,9 @@ Bresser PC 6 in 1
 Garni 935PC
 Ventus W835
 
+NB: This driver is not compatible with the WiFi versions of these 6 in 1
+weatherstations
+
 Installation
 ------------
 
@@ -88,6 +91,34 @@ will be full and it will no longer record data, so it is essential you
 regularly clear the console data log (best practice would be after a successful
 weewx database backup).  This can only be done at the weather station console.
 
+Version 0.9 now includes HeatIndex.  HeatIndex provided by the console is
+calculated differently to the HeatIndex calculated by weewx.  If the
+weewx calculation is preferred then the weewx.conf file should be modified like
+this:
+
+[StdWXCalculate]
+[[Calculations]]
+heatindex = software
+
+Version 0.9 also corrects the rainrate so that this is from the
+console.  The console uses a sliding window of an hour to perform the
+calculation as opposed to WeeWX which uses a sliding window of 900
+seconds (15 minutes). After WeeWX has performed its calculation, the
+result is scaled to an hour.  This can make a big difference to the
+calculated rainrate.  If the weewx calculation is prefered then the
+weewx.conf file should be modified like this:
+
+[StdWXCalculate]
+[[Calculations]]
+rainRate = software
+
+Weewx is backfilling lost values even if record_generation is set to
+'software' If you do not want the backfill update the weewx.conf file
+with:
+
+[StdArchive]
+no_catchup = True
+
 Known Issues
 ------------
 
@@ -96,3 +127,25 @@ errors might occur when there are no entries in the log.  The only cure found
 so far is to wait for the console to have one item in its data log and then
 re-start weewx.  Note if weewx is already running it does not appear to cause
 any problems to clear the data log buffer.
+
+The console uses local time (passed to it from the WS6in1 driver).
+This is good in that the console will display the correct time, but
+bad because it uses this time to store its data in the console.  The
+driver will correct for this local time difference when backfilling.
+However if Summertime is being used on the device this will cause
+problems when the clocks change.  There are currently 2 options
+1) live with the issue - probability of the backlog being needed
+(i.e. server failure) when the clocks change is very low
+2) Disable summertime on the device weewx is running on
+
+Roadmap
+-------
+
+If requested I may update time to the console to use UTC + fixed time
+zone.  This would mean the local device could use Summertime
+correction but the console would use a fixed time (so would display 1
+hour out for half the year).  This would eliminate the clock change
+problem.
+
+
+
