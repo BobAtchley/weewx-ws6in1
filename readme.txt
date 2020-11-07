@@ -3,30 +3,41 @@ weewx-ws6in1
 
 weewx driver for the 6 in 1 PC weather station clones:
 Youshiko YC9388
-Bresser PC 6 in 1
+Bresser PC 6 in 1 - 7002570
 Garni 935PC
 Ventus W835
 
-NB: This driver is not compatible with the WiFi versions of these 6 in 1
-weatherstations
+NB: This driver is not compatible with the WiFi versions of these 6 in
+1 weatherstations.  It is still possible to use weewx using a Software
+Defined Radio (SDR) - search for SDR in the weewx wiki.
 
 Installation
 ------------
+
+Installation assumes python3 will be used (strongly recommended
+python2 is out of support).
+
+The installation also assumes a debian compatible linux distribution.  Replace
+any 'apt' commands with your distributions equivalent (e.g. yum for red hat etc)
 
 0) install weewx (see the weewx user guide)
 
 1) install required usb libraries pyusb and crcmod
 
-pip install pyusb
-pip install crcmod
-pip install datetime
+pip3 install pyusb
+pip3 install crcmod
+pip3 install datetime
 
-Note 1: if running weewx with python3 but python2 is the default python, use pip3
-Note 2: if pip is not installed then install it first (e.g. sudo apt install
-python-pip on a debian based linux distribution) replace with python3-pip for a
-python3 install.
+Note 1: if running weewx with python2 then use pip2 instead of pip3
+Note 2: if pip3 is not installed then install it first (e.g. sudo apt install
+python3-pip on a debian based linux distribution) replace with python-pip for a
+python2 install.
 
-2) download the driver
+Some users have found it necessary to additionally install the crcmod from the repository:
+
+sudo apt install python3-crcmod
+
+2) download the WS6in1 driver
 
 wget -O weewx-ws6in1.zip https://github.com/bobatchley/weewx-ws6in1/archive/master.zip
 
@@ -75,11 +86,6 @@ weewx should be stopped before this is used and restarted afterwards.
 Additional Notes
 ----------------
 
-If weewx stops working (due to server problems etc) and there are missing
-records, on startup weewx will attempt to restore these from the your weather
-station console.  To be successful in the weewx.conf section "[StdArchive]" set
-record_generation = hardware (the default is software).
-
 The Archive_Interval in the weewx.conf section "[StdArchive]" controls how often
 data is written to the database.  Default is 300 seconds.  If the console data
 logger is not set to 5 minutes you may want to consider changing this to the
@@ -91,17 +97,15 @@ will be full and it will no longer record data, so it is essential you
 regularly clear the console data log (best practice would be after a successful
 weewx database backup).  This can only be done at the weather station console.
 
-Version 0.9 now includes HeatIndex.  HeatIndex provided by the console is
-calculated differently to the HeatIndex calculated by weewx.  If the
-weewx calculation is preferred then the weewx.conf file should be modified like
-this:
+HeatIndex provided by the console is calculated differently to the
+HeatIndex calculated by weewx.  If the weewx calculation is preferred
+then the weewx.conf file should be modified like this:
 
 [StdWXCalculate]
 [[Calculations]]
 heatindex = software
 
-Version 0.9 also corrects the rainrate so that this is from the
-console.  The console uses a sliding window of an hour to perform the
+Rainrate on the console uses a sliding window of an hour to perform the
 calculation as opposed to WeeWX which uses a sliding window of 900
 seconds (15 minutes). After WeeWX has performed its calculation, the
 result is scaled to an hour.  This can make a big difference to the
@@ -111,6 +115,10 @@ weewx.conf file should be modified like this:
 [StdWXCalculate]
 [[Calculations]]
 rainRate = software
+
+I now set the heatindex, rainRate and windchill to 'software' so that
+these are compatible with the majority of other weather stations, but
+this is user choice.
 
 Weewx is backfilling lost values even if record_generation is set to
 'software' If you do not want the backfill update the weewx.conf file
@@ -146,6 +154,3 @@ zone.  This would mean the local device could use Summertime
 correction but the console would use a fixed time (so would display 1
 hour out for half the year).  This would eliminate the clock change
 problem.
-
-
-

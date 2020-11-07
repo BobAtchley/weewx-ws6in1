@@ -1,3 +1,10 @@
+1.0 2020-11-07
+* Fix issue in decode for archive where last_ts can be None if database is
+  empty
+* readme.txt updated installation instructions, warning for WiFi 6 in 1
+  weatherstations not being compatible
+* Updated to version 1.0
+
 0.9 2020-09-08
 * LocalTime issue with backfill fixed (thanks ArendPWS).  Note: There are
   potential problems with summertime changeovers.  See readme.txt

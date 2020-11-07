@@ -375,7 +375,7 @@ import weewx.drivers
 log = logging.getLogger(__name__)
 
 DRIVER_NAME = 'WS6in1'
-DRIVER_VERSION = "0.8"
+DRIVER_VERSION = "1.0"
 
 #------------------------------------------------------------------------------
 # loader
@@ -726,9 +726,12 @@ class ws6in1(weewx.drivers.AbstractDevice):
                 my_time = self.get_archive_epoch(ws_date, ws_time)
 
                 if my_time != None:
-                    my_interval = my_time - self.last_ts
-                    if my_interval < 0:
-                        my_interval = 0
+
+                    # protect against last_ts being None (can happen for empty database)
+                    if self.last_ts != None:
+                        my_interval = my_time - self.last_ts
+                        if my_interval < 0:
+                            my_interval = 0
 
                     self.last_ts = my_time
 
