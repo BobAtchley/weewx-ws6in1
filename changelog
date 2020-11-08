@@ -1,3 +1,6 @@
+1.01 2020-11-08
+* since_ts also needs checking its not null in genStartupRecords
+
 1.0 2020-11-07
 * Fix issue in decode for archive where last_ts can be None if database is
   empty

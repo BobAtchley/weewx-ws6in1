@@ -375,7 +375,7 @@ import weewx.drivers
 log = logging.getLogger(__name__)
 
 DRIVER_NAME = 'WS6in1'
-DRIVER_VERSION = "1.0"
+DRIVER_VERSION = "1.01"
 
 #------------------------------------------------------------------------------
 # loader
@@ -1257,8 +1257,12 @@ class ws6in1(weewx.drivers.AbstractDevice):
                 log.error("genStartupRecords::IOError error: %s", my_error)
 
             if self.ws_status > 0:
-                # check that time is the wanted range
-                if packet['dateTime'] > since_ts:
+                # check that time is the wanted range (or not set)
+                if since_ts == None:
+                    log.debug("genStartupRecords: yielding (null ts)")
+                    yield packet
+                    
+                elif packet['dateTime'] > since_ts:
                     log.debug("genStartupRecords: yielding")
                     yield packet
 
