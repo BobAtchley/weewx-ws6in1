@@ -1,3 +1,10 @@
+1.02 2020-11-28
+* Updated supported weather stations (readme.txt) to include WS 5 in 1
+  weather stations from Bresser and Logia.  Manufacturer is CCL Electronics.
+* Added new optional 'WsType' parameter.  If set to WS5in1 this will suppress
+  the UV packet from being passed to weewx (5in1 weather stations don't
+  support UV).
+
 1.01 2020-11-08
 * since_ts also needs checking its not null in genStartupRecords
 

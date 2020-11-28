@@ -375,7 +375,7 @@ import weewx.drivers
 log = logging.getLogger(__name__)
 
 DRIVER_NAME = 'WS6in1'
-DRIVER_VERSION = "1.01"
+DRIVER_VERSION = "1.02"
 
 #------------------------------------------------------------------------------
 # loader
@@ -412,6 +412,11 @@ class ws6in1(weewx.drivers.AbstractDevice):
 
         # get data from the configuration if available
         self.model = stn_dict.get('model', 'WS6in1')
+        ws_type = stn_dict.get('wsType', 'WS6in1')
+        ws_type = ws_type.upper()
+        self.uv_flag = True
+        if ws_type == "WS5IN1":
+            self.uv_flag = False
 
         # initialise other parameters
         self.initialised = False
@@ -434,7 +439,7 @@ class ws6in1(weewx.drivers.AbstractDevice):
         self.in3 = None
         self.in4 = None
 
-        log.info("driver version is %s, Model is %s", DRIVER_VERSION, self.model)
+        log.info("driver version is %s, Model is %s, Type is", DRIVER_VERSION, self.model, ws_type)
     # end __init__
 
     #--------------------------------------------------------------------------
@@ -755,7 +760,8 @@ class ws6in1(weewx.drivers.AbstractDevice):
             packet['windDir'] = wind_dir_deg
             packet['pressure'] = barom_abs
             packet['barometer'] = barom_rel
-            packet['UV'] = uv_index
+            if self.uv_flag:
+                packet['UV'] = uv_index
             packet['dewpoint'] = dewpoint
             packet['heatindex'] = heatindex
             packet['extraHumid1'] = extra_humid1

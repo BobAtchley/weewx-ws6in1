@@ -1,15 +1,26 @@
 weewx-ws6in1
 ------------
 
-weewx driver for the 6 in 1 PC weather station clones:
+The weewx-ws6in1 driver supports weather stations that are believed to be
+manufactured by CCL Electronics - https://cclel.com
+That use a particular console that connects to PCs
+
+These are rebadged and sold as clones by multiple outlets.  The ones known
+to work with this driver are listed below:
+
+The weewx driver for the 6 in 1 PC weather station clones:
 Youshiko YC9388
 Bresser PC 6 in 1 - 7002570
 Garni 935PC
 Ventus W835
 
+It also supports 5 in 1 PC weather stations:
+Bresser PC 5 in 1 - 7002571
+Logia 5-in-1 PC - LOWSB510PB
+
 NB: This driver is not compatible with the WiFi versions of these 6 in
 1 weatherstations.  It is still possible to use weewx using a Software
-Defined Radio (SDR) - search for SDR in the weewx wiki.
+Defined Radio (SDR) - search for SDR in the weewx wiki or Interceptor.
 
 Installation
 ------------
@@ -53,9 +64,6 @@ wee_config --reconfigure
 
 Note: use sudo if you get permission errors
 
-Note: 'model' is optionally supported in the WS6in1 area of weewx.conf file
-e.g. model = "Garni 935PC"
-WS6in1 is used if model parameter is not defined
 
 5) start weewx
 
@@ -64,6 +72,26 @@ sudo /etc/init.d/weewx start
 [ or if using systemd:
 sudo systemctl start weewx
 sudo systemctl enable weewx ]
+
+
+Driver options
+--------------
+[WS6in1]
+    # mandatory location of the driver
+    driver = user.ws6in1
+
+    # optional parameters with default values if not set
+    model = WS6in1
+    wsType = WS6in1
+
+Both model and wsType are optional.
+
+'model' can be used to desribe the weatherstation model e.g. model = "Garni 935PC"
+'wsType' is ignored unless it is set to "WS5in1" which will cause the UV packet to
+be suppressed (the WS5in1 has no UV sensor, the console by default gives a
+misleading value of 0)
+
+===============================================================================
 
 csv_ws6in1
 ----------
@@ -82,6 +110,8 @@ ws6in1_<date and time>.raw
 
 These can be used for analysis, debugging, etc
 weewx should be stopped before this is used and restarted afterwards.
+
+===============================================================================
 
 Additional Notes
 ----------------
