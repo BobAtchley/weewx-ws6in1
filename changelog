@@ -1,3 +1,8 @@
+1.03 2021-03-30
+* A log.info at the end of the constructor had 3 string parameters but only 2
+  "%s" to use these (this causes an error in Python 3.8.7, in Python 3.7.3 no
+  error but the log.info was ignored)
+
 1.02 2020-11-28
 * Updated supported weather stations (readme.txt) to include WS 5 in 1
   weather stations from Bresser and Logia.  Manufacturer is CCL Electronics.
