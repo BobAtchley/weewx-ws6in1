@@ -375,7 +375,7 @@ import weewx.drivers
 log = logging.getLogger(__name__)
 
 DRIVER_NAME = 'WS6in1'
-DRIVER_VERSION = "1.02"
+DRIVER_VERSION = "1.03"
 
 #------------------------------------------------------------------------------
 # loader
@@ -439,7 +439,7 @@ class ws6in1(weewx.drivers.AbstractDevice):
         self.in3 = None
         self.in4 = None
 
-        log.info("driver version is %s, Model is %s, Type is", DRIVER_VERSION, self.model, ws_type)
+        log.info("driver version is %s, Model is %s, Type is %s", DRIVER_VERSION, self.model, ws_type)
     # end __init__
 
     #--------------------------------------------------------------------------
