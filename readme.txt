@@ -25,26 +25,30 @@ Defined Radio (SDR) - search for SDR in the weewx wiki or Interceptor.
 Installation
 ------------
 
-Installation assumes python3 will be used (strongly recommended
-python2 is out of support).
+weewx v5 is no longer backwardly compatible with python2.x, so the
+weewx-ws6in1 driver no longer supports python2
+(i.e. it is only compatible wth weewx versions 4.x and 5.x)
 
-The installation also assumes a debian compatible linux distribution.  Replace
-any 'apt' commands with your distributions equivalent (e.g. yum for red hat etc)
+The weewx utilities have changed between weewx v4 and weewx v5, for steps 3
+and 4 use the utility depending on the version of weewx you have installed.
+
+The installation instructions assume a debian compatible linux distribution.
+Replace any 'apt' commands with your distributions equivalent (e.g. yum for
+red hat etc)
 
 0) install weewx (see the weewx user guide)
 
-1) install required usb libraries pyusb and crcmod
+1) install required usb libraries pyusb, crcmod and datetime
 
-pip3 install pyusb
-pip3 install crcmod
-pip3 install datetime
+python3 -m pip install pyusb
+python3 -m pip install crcmod
+python3 -m pip install datetime
 
-Note 1: if running weewx with python2 then use pip2 instead of pip3
-Note 2: if pip3 is not installed then install it first (e.g. sudo apt install
-python3-pip on a debian based linux distribution) replace with python-pip for a
-python2 install.
+Note: if pip is not installed then install it first
+(e.g. sudo apt install python3-pip on a debian based linux distribution)
 
-Some users have found it necessary to additionally install the crcmod from the repository:
+Some users have found it necessary to additionally install the crcmod from
+the repository:
 
 sudo apt install python3-crcmod
 
@@ -54,18 +58,21 @@ wget -O weewx-ws6in1.zip https://github.com/bobatchley/weewx-ws6in1/archive/mast
 
 3) install the driver
 
-wee_extension --install weewx-ws6in1.zip
-
-Note: use sudo if you get permission errors.
+weewx v4.x:   wee_extension --install weewx-ws6in1.zip
+weewx v5.x:   weectl extension install weewx-ws6in1.zip
 
 4) configure the driver
 
-wee_config --reconfigure
+weewx v4.x:   wee_config --reconfigure
+weewx v5.x:   weectl station reconfigure 
 
-Note: use sudo if you get permission errors
+Select the 0) option for WS6in1
 
+5) Add optional parameters if required
+Edit your weewx.conf file to add the model and wsType parameters if these are
+required (see below "Driver Options").
 
-5) start weewx
+6) start weewx
 
 sudo /etc/init.d/weewx start
 
