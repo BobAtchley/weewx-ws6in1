@@ -1,3 +1,8 @@
+1.05 2024-02-18
+* When the weather station console data buffer is full the first 2 packets
+  contain misleading rain information - the first 2 data packets are now
+  suppressed
+
 1.04 2023-05-19
 * Update to readme.txt for installation changes for weewx v5.
 

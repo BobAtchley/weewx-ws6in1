@@ -439,6 +439,8 @@ class ws6in1(weewx.drivers.AbstractDevice):
         self.in3 = None
         self.in4 = None
 
+        self.start_count = 0
+
         log.info("driver version is %s, Model is %s, Type is %s", DRIVER_VERSION, self.model, ws_type)
     # end __init__
 
@@ -1080,10 +1082,15 @@ class ws6in1(weewx.drivers.AbstractDevice):
                 except IOError as my_error:
                     log.error("genLoopPackets::timeout on read as well: %s", my_error)
 
-            if self.ws_status > 0:
+            ## the first 2 packets can have odd rain values so only yield if at least 2 packets
+            if self.ws_status > 0 and self.start_count > 1:
                 tcount = 0
                 log.debug("genLoopPackets: yielding")
                 yield packet
+                self.ws_status = 0
+            elif self.ws_status > 0:
+                log.debug("genLoopPackets: suppressed initial yield")
+                self.start_count = self.start_count + 1
                 self.ws_status = 0
 
             # set the time every 24 hours (and initially after 20 loops to get initialisation done)
